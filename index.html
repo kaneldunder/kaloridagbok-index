@@ -152,8 +152,8 @@
     flex-shrink:0; border:none; background:var(--rust-light); color:var(--rust);
     width:28px; height:28px; border-radius:50%; font-size:15px; cursor:pointer;
   }
-  .ingcard .fieldgrid{display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;}
-  .ingcard .fieldgrid label{
+  .fieldgrid{display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;}
+  .fieldgrid label{
     display:block; font-size:9.5px; color:var(--muted); text-transform:uppercase;
     letter-spacing:.03em; margin-bottom:2px;
   }
@@ -176,6 +176,11 @@
     padding:6px; font-size:11.5px; font-weight:600; color:var(--muted); cursor:pointer;
   }
   .unitswitch button.active{background:var(--sage); color:#fff; border-color:var(--sage);}
+  .pantrybtn{
+    border:1px solid var(--line); background:#fff; border-radius:7px; padding:5px 9px;
+    font-size:11px; font-weight:600; color:var(--muted); cursor:pointer;
+  }
+  .pantrybtn.saved{background:var(--sage-light); color:var(--sage); border-color:var(--sage-light); cursor:default;}
   .mealtotals{
     display:flex; justify-content:space-between; background:var(--sage-light); border-radius:10px;
     padding:10px 12px; margin-bottom:10px; font-size:12.5px;
@@ -228,6 +233,7 @@ let state = {
   settings: { dailyGoal: 2200, startWeight: 100, targetWeight: 90 },
   weights: [],
   favorites: [],
+  pantry: [],
   cache: {},
   view: 'day',
   currentDate: new Date(),
@@ -289,6 +295,46 @@ function ingredientSubKcal(row){
 }
 function unitLabel(row){
   return row.unit === 'st' ? '/ st' : '/ 100g';
+}
+
+/* ---- Livsmedelsbibliotek ---- */
+function normName(s){ return (s||'').trim().toLowerCase(); }
+function findInPantry(name, unit){
+  const n = normName(name);
+  if(!n) return null;
+  return state.pantry.find(p => normName(p.name) === n && (unit ? p.unit === unit : true))
+      || state.pantry.find(p => normName(p.name) === n)
+      || null;
+}
+function pantryHasExact(row){
+  const p = findInPantry(row.name, row.unit);
+  return !!(p && p.unit === row.unit
+    && Number(p.kcalPer100) === Number(row.kcalPer100)
+    && Number(p.proteinPer100) === Number(row.proteinPer100)
+    && Number(p.fatPer100) === Number(row.fatPer100)
+    && Number(p.carbsPer100) === Number(row.carbsPer100));
+}
+async function savePantryItem(row){
+  const item = {
+    name: row.name.trim(), unit: row.unit || 'g',
+    kcalPer100: Number(row.kcalPer100)||0,
+    proteinPer100: Number(row.proteinPer100)||0,
+    fatPer100: Number(row.fatPer100)||0,
+    carbsPer100: Number(row.carbsPer100)||0
+  };
+  state.pantry = state.pantry.filter(p => !(normName(p.name) === normName(item.name) && p.unit === item.unit));
+  state.pantry.push(item);
+  state.pantry.sort((a,b) => a.name.localeCompare(b.name, 'sv'));
+  await ghSaveBundle();
+}
+function applyPantryToRow(idx, entry){
+  const row = state.mealBuilder[idx];
+  row.unit = entry.unit;
+  row.kcalPer100 = entry.kcalPer100;
+  row.proteinPer100 = entry.proteinPer100;
+  row.fatPer100 = entry.fatPer100;
+  row.carbsPer100 = entry.carbsPer100;
+  if(row.unit === 'st' && (!row.amount || row.amount === 100)) row.amount = 1;
 }
 function updateMealTotalsDOM(){
   const t = computeMealTotals();
@@ -392,6 +438,7 @@ async function ghSaveBundle(retry = true){
     settings: state.settings,
     weights: state.weights,
     favorites: state.favorites,
+    pantry: state.pantry,
     days: state.cache
   };
   try{
@@ -445,7 +492,7 @@ function render(){
     <header class="top">
       <div>
         <div class="eyebrow">Kaloridagbok</div>
-        <h1 class="display">Hej Erik 👋</h1>
+        <h1 class="display">Hej Erik</h1>
       </div>
       <button class="refreshbtn" id="refreshAll" title="Hämta senaste data">⟳</button>
     </header>
@@ -470,6 +517,7 @@ function render(){
       if(bundle.settings) state.settings = bundle.settings;
       if(bundle.weights) state.weights = bundle.weights;
       if(bundle.favorites) state.favorites = bundle.favorites;
+      if(bundle.pantry) state.pantry = bundle.pantry;
       if(bundle.days) state.cache = bundle.days;
     }
     refreshBtn.disabled = false;
@@ -674,10 +722,32 @@ async function renderDay(content){
       input.oninput = () => {
         const idx = Number(input.dataset.idx);
         const key = fieldMap[cls];
-        state.mealBuilder[idx][key] = key === 'name' ? input.value : input.value;
+        state.mealBuilder[idx][key] = input.value;
+        if(key === 'name'){
+          const hit = findInPantry(input.value);
+          if(hit){
+            applyPantryToRow(idx, hit);
+            renderContent();
+            // behåll fokus i namnfältet efter omritning
+            const again = content.querySelector(`.ing-name[data-idx="${idx}"]`);
+            if(again){ again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+            const st = document.getElementById('estStatus_' + idx);
+            if(st){ st.style.color = 'var(--sage)'; st.textContent = 'Hämtat från ditt bibliotek'; }
+            return;
+          }
+        }
         updateMealTotalsDOM();
       };
     });
+  });
+
+  content.querySelectorAll('.pantrybtn').forEach(btn => {
+    btn.onclick = async () => {
+      const idx = Number(btn.dataset.idx);
+      btn.disabled = true; btn.textContent = 'Sparar…';
+      await savePantryItem(state.mealBuilder[idx]);
+      renderContent();
+    };
   });
 
   const saveMealBtn = document.getElementById('saveMeal');
@@ -799,15 +869,15 @@ function quickFoodForm(){
     <div class="row"><input id="fName" placeholder="T.ex. 2 ägg och en banan"></div>
     <button class="estbtn" id="quickEstBtn" style="width:100%; margin-bottom:8px;">✨ Uppskatta hela måltiden</button>
     <div class="est-status" id="quickEstStatus"></div>
-    <div class="row">
-      <input id="fKcal" type="number" placeholder="Kcal">
-      <input id="fProtein" type="number" placeholder="Protein g">
+    <div class="fieldgrid">
+      <div><label>Kcal</label><input id="fKcal" type="number" placeholder="0"></div>
+      <div><label>Protein (g)</label><input id="fProtein" type="number" placeholder="0"></div>
     </div>
-    <div class="row">
-      <input id="fFat" type="number" placeholder="Fett g">
-      <input id="fCarbs" type="number" placeholder="Kolhydrater g">
+    <div class="fieldgrid">
+      <div><label>Fett (g)</label><input id="fFat" type="number" placeholder="0"></div>
+      <div><label>Kolhydrater (g)</label><input id="fCarbs" type="number" placeholder="0"></div>
     </div>
-    <label style="display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted); margin-bottom:10px;">
+    <label style="display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted); margin:10px 0;">
       <input type="checkbox" id="fSaveFav" style="width:auto;"> Spara som favorit
     </label>
     <div class="actions">
@@ -865,6 +935,7 @@ async function estimateQuickMeal(){
 function buildMealForm(){
   const t = computeMealTotals();
   return `
+    ${pantryDatalist()}
     <div class="row"><input id="buildMealName" placeholder="Namn på måltiden (valfritt)"></div>
     ${state.mealBuilder.map((row,i)=>ingredientRow(row,i)).join('')}
     <button class="addingbtn" id="addIngredient">+ Lägg till livsmedel</button>
@@ -887,9 +958,12 @@ function buildMealForm(){
 function ingredientRow(row, idx){
   const u = unitLabel(row);
   const isSt = row.unit === 'st';
+  const saved = pantryHasExact(row);
+  const canSave = row.name && row.name.trim() && Number(row.kcalPer100) > 0;
   return `<div class="ingcard">
     <div class="toprow">
-      <input class="ing-name" data-idx="${idx}" placeholder="${isSt ? 'T.ex. Banan, Korv med bröd' : 'Livsmedel, t.ex. Kycklingfilé'}" value="${row.name}">
+      <input class="ing-name" data-idx="${idx}" list="pantryList" autocomplete="off"
+        placeholder="${isSt ? 'T.ex. Banan, Korv med bröd' : 'Livsmedel, t.ex. Kycklingfilé'}" value="${row.name}">
       <button class="rmv" data-idx="${idx}">×</button>
     </div>
     <div class="unitswitch">
@@ -914,8 +988,15 @@ function ingredientRow(row, idx){
       <div><label>Kolhydrater ${u}</label><input class="ing-carbs" data-idx="${idx}" type="number" value="${row.carbsPer100}"></div>
       <div></div>
     </div>
-    <div class="sub" id="ingSub_${idx}">≈ ${ingredientSubKcal(row)} kcal</div>
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:4px;">
+      ${canSave ? `<button class="pantrybtn ${saved?'saved':''}" data-idx="${idx}" ${saved?'disabled':''}>${saved?'✓ I mitt bibliotek':'💾 Spara livsmedel'}</button>` : '<span></span>'}
+      <div class="sub" id="ingSub_${idx}">≈ ${ingredientSubKcal(row)} kcal</div>
+    </div>
   </div>`;
+}
+
+function pantryDatalist(){
+  return `<datalist id="pantryList">${state.pantry.map(p=>`<option value="${p.name}">`).join('')}</datalist>`;
 }
 
 function fileToBase64(file){
@@ -1262,6 +1343,21 @@ function renderSettings(content){
       <button class="addbtn" id="sSave" style="border-style:solid; color:#fff; background:var(--ink); border-color:var(--ink);">Spara inställningar</button>
     </div>
 
+    <div class="sectitle">Mitt livsmedelsbibliotek</div>
+    <div class="card">
+      <div class="empty" style="text-align:left; padding:0 0 10px;">
+        Sparade livsmedel fylls i automatiskt när du skriver namnet i "Bygg av flera delar".
+      </div>
+      ${state.pantry.length ? state.pantry.map((p,i)=>`
+        <div class="entry" style="margin-bottom:6px;">
+          <div>
+            <div class="name">${p.name}</div>
+            <div class="sub">${p.kcalPer100} kcal ${p.unit==='st'?'/ st':'/ 100g'} · P ${p.proteinPer100} · F ${p.fatPer100} · K ${p.carbsPer100}</div>
+          </div>
+          <div class="right"><button class="del delpantry" data-idx="${i}">×</button></div>
+        </div>`).join('') : '<div class="empty">Inga sparade livsmedel än.</div>'}
+    </div>
+
     <div class="sectitle">Synk (GitHub)</div>
     <div class="card">
       <div class="empty" style="text-align:left; padding:0 0 10px;">
@@ -1308,6 +1404,14 @@ function renderSettings(content){
     renderContent();
   };
 
+  content.querySelectorAll('.delpantry').forEach(btn => {
+    btn.onclick = async () => {
+      state.pantry.splice(Number(btn.dataset.idx), 1);
+      await ghSaveBundle();
+      renderContent();
+    };
+  });
+
   const ghStatus = document.getElementById('ghStatus');
   document.getElementById('ghSave').onclick = async () => {
     state.gh.owner = document.getElementById('ghOwner').value.trim();
@@ -1321,6 +1425,7 @@ function renderSettings(content){
       if(bundle.settings) state.settings = bundle.settings;
       if(bundle.weights) state.weights = bundle.weights;
       if(bundle.favorites) state.favorites = bundle.favorites;
+      if(bundle.pantry) state.pantry = bundle.pantry;
       if(bundle.days) state.cache = bundle.days;
       ghStatus.innerHTML = '<span style="color:var(--sage)">✓ Anslutet och data hämtad.</span>';
     } else if(ghConfigured()){
@@ -1346,6 +1451,7 @@ function renderSettings(content){
         settings: state.settings,
         weights: state.weights,
         favorites: state.favorites,
+        pantry: state.pantry,
         days: state.cache
       };
       const json = JSON.stringify(bundle);
@@ -1371,6 +1477,7 @@ function renderSettings(content){
       if(bundle.settings) state.settings = bundle.settings;
       if(bundle.weights) state.weights = bundle.weights;
       if(bundle.favorites) state.favorites = bundle.favorites;
+      if(bundle.pantry) state.pantry = bundle.pantry;
       if(bundle.days) state.cache = bundle.days;
       await ghSaveBundle();
       ioStatus.innerHTML = '<span style="color:var(--sage)">✓ Importerat och sparat till GitHub!</span>';
@@ -1392,6 +1499,7 @@ async function init(){
       if(bundle.settings) state.settings = bundle.settings;
       if(bundle.weights) state.weights = bundle.weights;
       if(bundle.favorites) state.favorites = bundle.favorites;
+      if(bundle.pantry) state.pantry = bundle.pantry;
       if(bundle.days) state.cache = bundle.days;
     }
   }
