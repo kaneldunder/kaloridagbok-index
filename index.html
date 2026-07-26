@@ -30,17 +30,16 @@
   .app{max-width:520px;margin:0 auto;padding:20px 16px 0;}
 
   header.top{padding:4px 4px 18px; display:flex; align-items:center; justify-content:space-between;}
-  header.top .eyebrow{
-    font-size:11px; letter-spacing:.12em; text-transform:uppercase;
-    color:var(--muted); font-weight:600; margin-bottom:4px;
-  }
-  header.top h1{
-    font-size:28px; margin:0; font-weight:600; letter-spacing:-.01em;
+  header.top .apptitle{
+    flex:1; text-align:center; font-size:34px; margin:0; font-weight:600;
+    letter-spacing:-.01em; color:var(--sage);
   }
   .refreshbtn{
     border:1px solid var(--line); background:#fff; color:var(--muted);
     width:38px; height:38px; border-radius:50%; font-size:16px; cursor:pointer;
+    flex-shrink:0;
   }
+  .hdr-spacer{width:38px; flex-shrink:0;}
   .refreshbtn:disabled{opacity:.5;}
   .syncbar{font-size:11.5px; padding:0 4px 12px; min-height:14px;}
 
@@ -490,10 +489,8 @@ function render(){
   const app = document.getElementById('app');
   app.innerHTML = `
     <header class="top">
-      <div>
-        <div class="eyebrow">Kaloridagbok</div>
-        <h1 class="display">Hej Erik</h1>
-      </div>
+      <div class="hdr-spacer"></div>
+      <h1 class="apptitle display">Kaloridagboken</h1>
       <button class="refreshbtn" id="refreshAll" title="Hämta senaste data">⟳</button>
     </header>
     <div class="syncbar" id="syncBanner">${syncBannerHTML()}</div>
