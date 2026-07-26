@@ -198,6 +198,12 @@
 
   .summaryrow{display:flex; gap:8px; margin-top:14px;}
   .summaryrow .stat{flex:1;}
+  .compare{margin-top:14px; padding:12px; background:var(--paper); border-radius:12px;}
+  .compare .cmp-row{display:flex; gap:12px;}
+  .compare .cmp-row > div{flex:1;}
+  .compare .k{font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
+  .compare .v{font-size:19px; font-weight:600; margin-top:2px;}
+  .cmp-note{font-size:11.5px; color:var(--muted); line-height:1.45; margin-top:8px;}
 
   /* Weight */
   .weightgraph{width:100%; height:120px;}
@@ -503,7 +509,7 @@ function render(){
     <div id="content"></div>
   `;
   app.querySelectorAll('nav.tabs button').forEach(btn=>{
-    btn.onclick = () => { state.view = btn.dataset.view; state.openForm = null; renderContent(); render(); };
+    btn.onclick = () => { state.view = btn.dataset.view; state.openForm = null; render(); };
   });
   const refreshBtn = document.getElementById('refreshAll');
   if(refreshBtn) refreshBtn.onclick = async () => {
@@ -524,9 +530,15 @@ function render(){
   renderContent();
 }
 
+let renderToken = 0;
+function currentToken(){ return renderToken; }
+function isStale(token){
+  return token !== renderToken || !document.getElementById('content');
+}
 async function renderContent(){
   const content = document.getElementById('content');
   if(!content) return;
+  renderToken++;
   if(state.view === 'day') return renderDay(content);
   if(state.view === 'week') return renderWeek(content);
   if(state.view === 'month') return renderMonth(content);
@@ -1143,7 +1155,65 @@ function exerciseForm(){
 }
 
 /* ---------- WEEK VIEW ---------- */
+/* Jämför teoretiskt underskott med faktisk viktförändring. */
+function comparisonBlock(st, actualKg, periodWord){
+  if(!st.logged) return '';
+  const theory = -st.predictedKg; // negativt = nedgång
+  const theoryTxt = signed(theory, 2) + ' kg';
+  let actualTxt = '—', note;
+  if(actualKg === null){
+    note = 'Logga vikt i början och slutet av ' + periodWord + ' för att kunna jämföra.';
+  } else {
+    actualTxt = signed(actualKg, 1) + ' kg';
+    const diff = Math.abs(actualKg - theory);
+    if(st.logged < st.total){
+      note = 'Obs: bara ' + st.logged + ' av ' + st.total + ' dagar loggade, så underskottet är sannolikt underskattat.';
+    } else if(diff < 0.4){
+      note = 'Stämmer väl överens.';
+    } else if(actualKg > theory){
+      note = 'Vikten sjönk mindre än beräknat — vanligt vid vätskeretention, eller så är portionerna större än uppskattat.';
+    } else {
+      note = 'Vikten sjönk mer än beräknat — ofta vätske- eller glykogenförlust snarare än enbart fett.';
+    }
+  }
+  return `
+    <div class="compare">
+      <div class="cmp-row">
+        <div><div class="k">Beräknat av underskott</div><div class="v">${theoryTxt}</div></div>
+        <div><div class="k">Faktisk viktförändring</div><div class="v">${actualTxt}</div></div>
+      </div>
+      <div class="cmp-note">${note}</div>
+    </div>`;
+}
+
+/* Statistik för en period. 7700 kcal ≈ 1 kg kroppsfett. */
+function periodStats(results, goal){
+  const logged = results.filter(r => r.totals.intake > 0);
+  const avgNet = logged.length ? Math.round(logged.reduce((s,r)=>s+r.totals.net,0)/logged.length) : 0;
+  const avgProtein = logged.length ? Math.round(logged.reduce((s,r)=>s+r.totals.protein,0)/logged.length) : 0;
+  const totalBurned = results.reduce((s,r)=>s+r.totals.burned,0);
+  const daysUnder = logged.filter(r => r.totals.net <= goal).length;
+  // Ackumulerat underskott räknas bara på loggade dagar
+  const totalDeficit = logged.reduce((s,r)=>s+(goal - r.totals.net), 0);
+  const predictedKg = totalDeficit / 7700;
+  return { logged: logged.length, total: results.length, avgNet, avgProtein,
+           totalBurned, daysUnder, totalDeficit, predictedKg };
+}
+/* Faktisk viktförändring inom ett datumintervall (ISO-strängar). */
+function weightChangeBetween(fromYmd, toYmd){
+  const ws = state.weights
+    .filter(w => w.date >= fromYmd && w.date <= toYmd)
+    .sort((a,b)=>a.date.localeCompare(b.date));
+  if(ws.length < 2) return null;
+  return ws[ws.length-1].kg - ws[0].kg;
+}
+function signed(n, dec){
+  const v = Number(n).toFixed(dec===undefined?1:dec);
+  return (Number(v) > 0 ? '+' : '') + v;
+}
+
 async function renderWeek(content){
+  const token = currentToken();
   content.innerHTML = `<div class="card"><div class="empty">Laddar vecka…</div></div>`;
   const days = [];
   const base = new Date(state.currentDate);
@@ -1158,11 +1228,12 @@ async function renderWeek(content){
     const data = await loadDay(ymd(d));
     results.push({ date: d, totals: dayTotals(data) });
   }
+  if(isStale(token)) return;
   const goal = state.settings.dailyGoal;
   const maxVal = Math.max(goal*1.3, ...results.map(r=>r.totals.net), 1);
-  const avgNet = Math.round(results.reduce((s,r)=>s+r.totals.net,0)/7);
-  const totalBurned = results.reduce((s,r)=>s+r.totals.burned,0);
+  const st = periodStats(results, goal);
   const dayLabels = ['M','T','O','T','F','L','S'];
+  const actualKg = weightChangeBetween(ymd(days[0]), ymd(days[6]));
 
   content.innerHTML = `
     <div class="card">
@@ -1186,10 +1257,16 @@ async function renderWeek(content){
         }).join('')}
       </div>
       <div class="summaryrow">
-        <div class="stat"><div class="k">Snitt netto/dag</div><div class="v">${avgNet}</div></div>
-        <div class="stat sage"><div class="k">Träning totalt</div><div class="v">−${totalBurned}</div></div>
+        <div class="stat"><div class="k">Snitt netto/dag</div><div class="v">${st.avgNet}</div></div>
+        <div class="stat sage"><div class="k">Träning totalt</div><div class="v">−${st.totalBurned}</div></div>
         <div class="stat"><div class="k">Mål/dag</div><div class="v">${goal}</div></div>
       </div>
+      <div class="summaryrow">
+        <div class="stat"><div class="k">Protein snitt/dag</div><div class="v">${st.avgProtein} g</div></div>
+        <div class="stat"><div class="k">Loggade dagar</div><div class="v">${st.logged}/7</div></div>
+        <div class="stat sage"><div class="k">Dagar under mål</div><div class="v">${st.daysUnder}/${st.logged}</div></div>
+      </div>
+      ${comparisonBlock(st, actualKg, 'veckan')}
     </div>
   `;
   document.getElementById('prevWeek').onclick = () => { state.currentDate.setDate(state.currentDate.getDate()-7); renderContent(); };
@@ -1211,6 +1288,7 @@ function fmtRange(a,b){
 
 /* ---------- MONTH VIEW ---------- */
 async function renderMonth(content){
+  const token = currentToken();
   content.innerHTML = `<div class="card"><div class="empty">Laddar månad…</div></div>`;
   const year = state.currentDate.getFullYear();
   const month = state.currentDate.getMonth();
@@ -1221,19 +1299,18 @@ async function renderMonth(content){
     const data = await loadDay(ymd(d));
     results.push({ date: d, totals: dayTotals(data) });
   }
+  if(isStale(token)) return;
   const goal = state.settings.dailyGoal;
-  const loggedDays = results.filter(r=>r.totals.intake>0);
-  const avgNet = loggedDays.length ? Math.round(loggedDays.reduce((s,r)=>s+r.totals.net,0)/loggedDays.length) : 0;
-  const daysUnderGoal = results.filter(r=>r.totals.intake>0 && r.totals.net<=goal).length;
+  const st = periodStats(results, goal);
   const maxVal = Math.max(goal*1.3, ...results.map(r=>r.totals.net), 1);
   const mn = ['Januari','Februari','Mars','April','Maj','Juni','Juli','Augusti','September','Oktober','November','December'];
 
-  // weight change during month
-  const weights = state.weights.filter(w => w.date >= ymd(new Date(year,month,1)) && w.date <= ymd(new Date(year,month,daysInMonth)));
-  let weightChange = null;
-  if(weights.length >= 2){
-    weightChange = (weights[weights.length-1].kg - weights[0].kg).toFixed(1);
-  }
+  const firstYmd = ymd(new Date(year,month,1));
+  const lastYmd = ymd(new Date(year,month,daysInMonth));
+  const monthWeights = state.weights
+    .filter(w => w.date >= firstYmd && w.date <= lastYmd)
+    .sort((a,b)=>a.date.localeCompare(b.date));
+  const weightChange = weightChangeBetween(firstYmd, lastYmd);
 
   content.innerHTML = `
     <div class="card">
@@ -1256,10 +1333,23 @@ async function renderMonth(content){
         }).join('')}
       </div>
       <div class="summaryrow">
-        <div class="stat"><div class="k">Snitt netto</div><div class="v">${avgNet}</div></div>
-        <div class="stat sage"><div class="k">Dagar under mål</div><div class="v">${daysUnderGoal}/${loggedDays.length}</div></div>
-        <div class="stat ${weightChange<0?'sage':'rust'}"><div class="k">Vikt denna månad</div><div class="v">${weightChange!==null ? (weightChange>0?'+':'')+weightChange+' kg' : '—'}</div></div>
+        <div class="stat"><div class="k">Snitt netto</div><div class="v">${st.avgNet}</div></div>
+        <div class="stat"><div class="k">Protein snitt</div><div class="v">${st.avgProtein} g</div></div>
+        <div class="stat"><div class="k">Loggade dagar</div><div class="v">${st.logged}/${daysInMonth}</div></div>
       </div>
+      <div class="summaryrow">
+        <div class="stat sage"><div class="k">Dagar under mål</div><div class="v">${st.daysUnder}/${st.logged}</div></div>
+        <div class="stat sage"><div class="k">Träning totalt</div><div class="v">−${st.totalBurned}</div></div>
+        <div class="stat ${weightChange!==null && weightChange<0?'sage':'rust'}"><div class="k">Vikt denna månad</div><div class="v">${weightChange!==null ? signed(weightChange,1)+' kg' : '—'}</div></div>
+      </div>
+      ${comparisonBlock(st, weightChange, 'månaden')}
+    </div>
+    <div class="card">
+      <div class="sectitle" style="margin:0 0 8px 2px;">Viktkurva</div>
+      ${monthWeights.length >= 2
+        ? `<svg class="weightgraph" viewBox="0 0 300 120" preserveAspectRatio="none">${weightSvg(monthWeights)}</svg>
+           <div class="cmp-note" style="margin-top:6px;">${monthWeights[0].kg} kg → ${monthWeights[monthWeights.length-1].kg} kg (${monthWeights.length} mätningar)</div>`
+        : `<div class="empty">Logga vikt minst två gånger under månaden för att se en kurva.</div>`}
     </div>
   `;
   document.getElementById('prevMonth').onclick = () => { state.currentDate.setMonth(state.currentDate.getMonth()-1); renderContent(); };
