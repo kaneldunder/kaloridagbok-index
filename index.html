@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Kaloridagbok</title>
+<style>
+  :root{
+    --paper:#F7F4EE;
+    --card:#FFFFFF;
+    --ink:#23262B;
+    --muted:#71757D;
+    --line:#E7E2D8;
+    --sage:#5B7B6A;
+    --sage-light:#E4ECE6;
+    --rust:#A85C40;
+    --rust-light:#F3E3DB;
+    --gold:#C9A24B;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    min-height:100vh;
+    padding-bottom:40px;
+  }
+  .display{font-family:Georgia,'Times New Roman',serif;}
+  .app{max-width:520px;margin:0 auto;padding:20px 16px 0;}
+
+  header.top{padding:4px 4px 18px; display:flex; align-items:center; justify-content:space-between;}
+  header.top .eyebrow{
+    font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--muted); font-weight:600; margin-bottom:4px;
+  }
+  header.top h1{
+    font-size:28px; margin:0; font-weight:600; letter-spacing:-.01em;
+  }
+  .refreshbtn{
+    border:1px solid var(--line); background:#fff; color:var(--muted);
+    width:38px; height:38px; border-radius:50%; font-size:16px; cursor:pointer;
+  }
+  .refreshbtn:disabled{opacity:.5;}
+  .syncbar{font-size:11.5px; padding:0 4px 12px; min-height:14px;}
+
+  nav.tabs{
+    display:flex; gap:4px; background:var(--card); border:1px solid var(--line);
+    border-radius:14px; padding:4px; margin-bottom:18px;
+  }
+  nav.tabs button{
+    flex:1; border:none; background:transparent; padding:9px 4px;
+    font-family:'Inter',sans-serif; font-size:13px; font-weight:600;
+    color:var(--muted); border-radius:10px; cursor:pointer;
+  }
+  nav.tabs button.active{background:var(--sage); color:#fff;}
+
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:16px; margin-bottom:14px;
+  }
+
+  /* Day view */
+  .datebar{display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;}
+  .datebar button{
+    width:34px; height:34px; border-radius:50%; border:1px solid var(--line);
+    background:#fff; font-size:16px; cursor:pointer; color:var(--ink);
+  }
+  .datebar .label{font-weight:600; font-size:15px; text-align:center;}
+  .datebar .label small{display:block; font-weight:400; color:var(--muted); font-size:11.5px; margin-top:1px;}
+
+  .ring-wrap{display:flex; align-items:center; gap:18px;}
+  .ring{position:relative; width:112px; height:112px; flex-shrink:0;}
+  .ring svg{transform:rotate(-90deg);}
+  .ring .center{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+  }
+  .ring .center .num{font-size:22px; font-weight:600;}
+  .ring .center .unit{font-size:10px; color:var(--muted); letter-spacing:.05em;}
+
+  .statgrid{display:grid; grid-template-columns:1fr 1fr; gap:8px; flex:1;}
+  .stat{background:var(--paper); border-radius:10px; padding:8px 10px;}
+  .stat .k{font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
+  .stat .v{font-size:16px; font-weight:600; margin-top:2px;}
+  .stat.rust .v{color:var(--rust);}
+  .stat.sage .v{color:var(--sage);}
+
+  .macrorow{display:flex; gap:10px; margin-top:14px;}
+  .macro{flex:1; text-align:center;}
+  .macro .bar{height:5px; border-radius:3px; background:var(--line); overflow:hidden; margin-bottom:5px;}
+  .macro .bar i{display:block; height:100%; background:var(--sage);}
+  .macro .lbl{font-size:11px; color:var(--muted);}
+  .macro .amt{font-size:13px; font-weight:600;}
+
+  .sectitle{
+    font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted);
+    font-weight:700; margin:18px 0 8px 2px;
+  }
+  .entry{
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:11px 12px; margin-bottom:8px;
+  }
+  .entry .name{font-size:14px; font-weight:600;}
+  .entry .sub{font-size:11.5px; color:var(--muted); margin-top:1px;}
+  .entry .right{display:flex; align-items:center; gap:10px;}
+  .entry .kcal{font-size:14px; font-weight:600;}
+  .entry.exercise .kcal{color:var(--sage);}
+  .entry .del{
+    border:none; background:none; color:var(--muted); font-size:16px; cursor:pointer;
+    width:24px; height:24px; line-height:1;
+  }
+  .entry .addfav{color:var(--sage); font-size:19px; font-weight:700;}
+  .empty{color:var(--muted); font-size:13px; text-align:center; padding:18px 0;}
+
+  .addbtn{
+    display:flex; align-items:center; justify-content:center; gap:6px;
+    width:100%; padding:11px; border-radius:12px; border:1.5px dashed var(--line);
+    background:transparent; color:var(--muted); font-size:13px; font-weight:600;
+    cursor:pointer; margin-bottom:8px;
+  }
+  .addbtn.food{color:var(--rust); border-color:var(--rust-light);}
+  .addbtn.exercise{color:var(--sage); border-color:var(--sage-light);}
+
+  .form{background:var(--paper); border-radius:12px; padding:12px; margin-bottom:10px;}
+  .form .row{display:flex; gap:8px; margin-bottom:8px;}
+  .form input{
+    width:100%; border:1px solid var(--line); border-radius:9px; padding:9px 10px;
+    font-size:14px; font-family:'Inter',sans-serif; background:#fff;
+  }
+  .form .row input{flex:1;}
+  .form .actions{display:flex; gap:8px;}
+  .form .actions button{
+    flex:1; border:none; border-radius:9px; padding:10px; font-weight:600;
+    font-size:13.5px; cursor:pointer;
+  }
+  .form .save{background:var(--ink); color:#fff;}
+  .form .cancel{background:var(--line); color:var(--ink);}
+
+  .modeswitch{display:flex; gap:6px; margin-bottom:10px;}
+  .modeswitch button{
+    flex:1; border:1px solid var(--line); background:#fff; border-radius:8px;
+    padding:7px; font-size:12.5px; font-weight:600; color:var(--muted); cursor:pointer;
+  }
+  .modeswitch button.active{background:var(--ink); color:#fff; border-color:var(--ink);}
+
+  .ingcard{background:#fff; border:1px solid var(--line); border-radius:11px; padding:10px; margin-bottom:8px;}
+  .ingcard .toprow{display:flex; gap:8px; align-items:center; margin-bottom:8px;}
+  .ingcard .toprow input{flex:1;}
+  .ingcard .rmv{
+    flex-shrink:0; border:none; background:var(--rust-light); color:var(--rust);
+    width:28px; height:28px; border-radius:50%; font-size:15px; cursor:pointer;
+  }
+  .ingcard .fieldgrid{display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;}
+  .ingcard .fieldgrid label{
+    display:block; font-size:9.5px; color:var(--muted); text-transform:uppercase;
+    letter-spacing:.03em; margin-bottom:2px;
+  }
+  .ingcard .sub{font-size:12px; color:var(--sage); font-weight:600; text-align:right; margin-top:2px;}
+  .addingbtn{
+    display:flex; align-items:center; justify-content:center; gap:6px; width:100%;
+    padding:9px; border-radius:10px; border:1.5px dashed var(--line); background:transparent;
+    color:var(--muted); font-size:12.5px; font-weight:600; cursor:pointer; margin-bottom:10px;
+  }
+  .estbtn{
+    display:flex; align-items:center; justify-content:center; gap:6px; width:100%;
+    padding:7px; border-radius:8px; border:1px solid var(--gold); background:#FBF6EA;
+    color:#8A6D2A; font-size:11.5px; font-weight:600; cursor:pointer; margin-bottom:8px;
+  }
+  .estbtn:disabled{opacity:.6; cursor:default;}
+  .est-status{font-size:11px; color:var(--rust); margin-bottom:6px; min-height:14px; line-height:1.4;}
+  .mealtotals{
+    display:flex; justify-content:space-between; background:var(--sage-light); border-radius:10px;
+    padding:10px 12px; margin-bottom:10px; font-size:12.5px;
+  }
+  .mealtotals .tot b{font-size:15px; display:block;}
+
+  /* Week/month bars */
+  .barchart{display:flex; align-items:flex-end; gap:6px; height:140px; overflow-x:auto; padding:4px 2px 0;}
+  .barcol{flex:0 0 auto; width:30px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;}
+  .barcol .track{width:16px; height:100%; background:var(--line); border-radius:8px; position:relative; overflow:hidden; display:flex; align-items:flex-end;}
+  .barcol .fill{width:100%; border-radius:8px 8px 0 0;}
+  .barcol .fill.under{background:var(--sage);}
+  .barcol .fill.over{background:var(--rust);}
+  .barcol .day{font-size:10px; color:var(--muted); margin-top:6px;}
+  .goalline{position:absolute; left:0; right:0; height:1px; background:var(--gold); z-index:2;}
+
+  .summaryrow{display:flex; gap:8px; margin-top:14px;}
+  .summaryrow .stat{flex:1;}
+
+  /* Weight */
+  .weightgraph{width:100%; height:120px;}
+  .weightform{display:flex; gap:8px; margin-bottom:12px;}
+  .weightform input{flex:1;}
+  .weightform button{
+    border:none; background:var(--ink); color:#fff; border-radius:9px;
+    padding:0 16px; font-weight:600; font-size:13.5px; cursor:pointer;
+  }
+  .wentry{display:flex; justify-content:space-between; padding:8px 4px; border-bottom:1px solid var(--line); font-size:13.5px;}
+  .wentry .d{color:var(--muted);}
+
+  .settingsrow{margin-bottom:14px;}
+  .settingsrow label{display:block; font-size:12.5px; color:var(--muted); margin-bottom:5px; font-weight:600;}
+  .settingsrow input{width:100%; border:1px solid var(--line); border-radius:9px; padding:10px; font-size:14px; background:#fff;}
+
+  .loading{text-align:center; padding:60px 0; color:var(--muted); font-size:14px;}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="loading">Laddar…</div>
+</div>
+
+<script>
+window.onerror = function(msg, src, line, col, err){
+  const app = document.getElementById('app');
+  if(app) app.innerHTML = '<div class="card"><div class="empty">Ett fel uppstod: ' + msg + ' (rad ' + line + ')</div></div>';
+};
+
+let state = {
+  settings: { dailyGoal: 2200, startWeight: 100, targetWeight: 90 },
+  weights: [],
+  favorites: [],
+  cache: {},
+  view: 'day',
+  currentDate: new Date(),
+  openForm: null,
+  foodFormMode: 'quick',
+  mealBuilder: [],
+  lastSync: null,
+  gh: { owner: '', repo: '', token: '', path: 'kaloridagbok-data.json', branch: 'main', sha: null },
+  aiKey: '',
+};
+
+function loadAiKey(){
+  try{ state.aiKey = localStorage.getItem('kaloridagbok-ai-key') || ''; }
+  catch(e){ console.error('Could not read AI key', e); }
+}
+function saveAiKey(key){
+  try{ localStorage.setItem('kaloridagbok-ai-key', key); state.aiKey = key; }
+  catch(e){ console.error('Could not save AI key', e); }
+}
+
+function loadGhConfig(){
+  try{
+    const raw = localStorage.getItem('kaloridagbok-gh-config');
+    if(raw) state.gh = { ...state.gh, ...JSON.parse(raw) };
+  }catch(e){ console.error('Could not read GitHub config', e); }
+}
+function saveGhConfig(){
+  try{
+    const { owner, repo, token, path, branch } = state.gh;
+    localStorage.setItem('kaloridagbok-gh-config', JSON.stringify({ owner, repo, token, path, branch }));
+  }catch(e){ console.error('Could not save GitHub config', e); }
+}
+function ghConfigured(){
+  return !!(state.gh.owner && state.gh.repo && state.gh.token);
+}
+
+function emptyIngredient(){
+  return { name:'', amount:100, kcalPer100:0, proteinPer100:0, fatPer100:0, carbsPer100:0 };
+}
+function computeMealTotals(){
+  return state.mealBuilder.reduce((acc, row) => {
+    const factor = (Number(row.amount)||0) / 100;
+    acc.kcal += factor * (Number(row.kcalPer100)||0);
+    acc.protein += factor * (Number(row.proteinPer100)||0);
+    acc.fat += factor * (Number(row.fatPer100)||0);
+    acc.carbs += factor * (Number(row.carbsPer100)||0);
+    return acc;
+  }, { kcal:0, protein:0, fat:0, carbs:0 });
+}
+function ingredientSubKcal(row){
+  return Math.round(((Number(row.amount)||0)/100) * (Number(row.kcalPer100)||0));
+}
+function updateMealTotalsDOM(){
+  const t = computeMealTotals();
+  const kcalEl = document.getElementById('buildTotKcal');
+  const proteinEl = document.getElementById('buildTotProtein');
+  const fatEl = document.getElementById('buildTotFat');
+  const carbsEl = document.getElementById('buildTotCarbs');
+  if(kcalEl) kcalEl.textContent = Math.round(t.kcal);
+  if(proteinEl) proteinEl.textContent = Math.round(t.protein) + 'g';
+  if(fatEl) fatEl.textContent = Math.round(t.fat) + 'g';
+  if(carbsEl) carbsEl.textContent = Math.round(t.carbs) + 'g';
+  state.mealBuilder.forEach((row, i) => {
+    const subEl = document.getElementById('ingSub_' + i);
+    if(subEl) subEl.textContent = '≈ ' + ingredientSubKcal(row) + ' kcal';
+  });
+}
+
+function ymd(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function todayYmd(){ return ymd(new Date()); }
+function fmtDateLabel(d){
+  const dayNames = ['Söndag','Måndag','Tisdag','Onsdag','Torsdag','Fredag','Lördag'];
+  const monthNames = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
+  const isToday = ymd(d) === todayYmd();
+  return { main: `${d.getDate()} ${monthNames[d.getMonth()]}`, sub: isToday ? 'Idag' : dayNames[d.getDay()] };
+}
+
+function noteSync(ok, label){
+  state.lastSync = { ok, label, time: new Date() };
+  const el = document.getElementById('syncBanner');
+  if(el) el.innerHTML = syncBannerHTML();
+}
+function syncBannerHTML(){
+  if(!state.lastSync) return '';
+  const { ok, label, time } = state.lastSync;
+  const hh = String(time.getHours()).padStart(2,'0');
+  const mm = String(time.getMinutes()).padStart(2,'0');
+  const ss = String(time.getSeconds()).padStart(2,'0');
+  return `<span style="color:${ok?'var(--sage)':'var(--rust)'}">${ok?'✓':'⚠'} ${label} kl ${hh}:${mm}:${ss}${ok?'':' — sparades EJ till molnet'}</span>`;
+}
+
+function b64EncodeUnicode(str){
+  return btoa(unescape(encodeURIComponent(str)));
+}
+function b64DecodeUnicode(str){
+  return decodeURIComponent(escape(atob(str)));
+}
+
+async function ghRequest(options = {}){
+  const cfg = state.gh;
+  const url = `https://api.github.com/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${encodeURIComponent(cfg.path)}`;
+  return fetch(url, {
+    ...options,
+    headers: {
+      'Authorization': `Bearer ${cfg.token}`,
+      'Accept': 'application/vnd.github+json',
+      ...(options.headers || {})
+    }
+  });
+}
+
+async function ghLoadBundle(){
+  if(!ghConfigured()){
+    noteSync(false, 'GitHub ej konfigurerat – fyll i under Inställningar');
+    return null;
+  }
+  try{
+    const res = await ghRequest({ method: 'GET' });
+    if(res.status === 404){
+      state.gh.sha = null;
+      noteSync(true, 'Ingen datafil i GitHub ännu (skapas vid första sparning)');
+      return null;
+    }
+    if(!res.ok){
+      const t = await res.text().catch(() => '');
+      throw new Error(`GitHub svarade ${res.status}: ${t.slice(0,120)}`);
+    }
+    const json = await res.json();
+    state.gh.sha = json.sha;
+    const decoded = b64DecodeUnicode(json.content.replace(/\n/g, ''));
+    const bundle = JSON.parse(decoded);
+    noteSync(true, 'Hämtade data från GitHub');
+    return bundle;
+  }catch(e){
+    console.error('GitHub load failed', e);
+    noteSync(false, `Kunde inte hämta från GitHub (${(e.message || '').slice(0,80)})`);
+    return null;
+  }
+}
+
+async function ghSaveBundle(retry = true){
+  if(!ghConfigured()){
+    noteSync(false, 'GitHub ej konfigurerat – fyll i under Inställningar');
+    return false;
+  }
+  const bundle = {
+    settings: state.settings,
+    weights: state.weights,
+    favorites: state.favorites,
+    days: state.cache
+  };
+  try{
+    const body = {
+      message: `Uppdatera kaloridagbok ${new Date().toISOString()}`,
+      content: b64EncodeUnicode(JSON.stringify(bundle)),
+      branch: state.gh.branch || 'main'
+    };
+    if(state.gh.sha) body.sha = state.gh.sha;
+    const res = await ghRequest({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if(res.status === 409 && retry){
+      await ghLoadBundle();
+      return await ghSaveBundle(false);
+    }
+    if(!res.ok){
+      const t = await res.text().catch(() => '');
+      throw new Error(`GitHub svarade ${res.status}: ${t.slice(0,120)}`);
+    }
+    const json = await res.json();
+    state.gh.sha = json.content.sha;
+    noteSync(true, 'Sparat till GitHub');
+    return true;
+  }catch(e){
+    console.error('GitHub save failed', e);
+    noteSync(false, `Kunde inte spara till GitHub (${(e.message || '').slice(0,80)})`);
+    return false;
+  }
+}
+
+async function loadDay(dateStr){
+  if(!state.cache[dateStr]) state.cache[dateStr] = { food: [], exercise: [] };
+  return state.cache[dateStr];
+}
+async function saveDay(dateStr, data){
+  state.cache[dateStr] = data;
+  return await ghSaveBundle();
+}
+
+function dayTotals(data){
+  const intake = data.food.reduce((s,f)=>s+Number(f.kcal||0),0);
+  const burned = data.exercise.reduce((s,e)=>s+Number(e.kcal||0),0);
+  const protein = data.food.reduce((s,f)=>s+Number(f.protein||0),0);
+  const fat = data.food.reduce((s,f)=>s+Number(f.fat||0),0);
+  const carbs = data.food.reduce((s,f)=>s+Number(f.carbs||0),0);
+  return { intake, burned, net: intake - burned, protein, fat, carbs };
+}
+
+function render(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <header class="top">
+      <div>
+        <div class="eyebrow">Kaloridagbok</div>
+        <h1 class="display">Hej Erik 👋</h1>
+      </div>
+      <button class="refreshbtn" id="refreshAll" title="Hämta senaste data">⟳</button>
+    </header>
+    <div class="syncbar" id="syncBanner">${syncBannerHTML()}</div>
+    <nav class="tabs">
+      ${['day','week','month','weight','settings'].map(v => `
+        <button data-view="${v}" class="${state.view===v?'active':''}">
+          ${{day:'Dag',week:'Vecka',month:'Månad',weight:'Vikt',settings:'Inställ.'}[v]}
+        </button>`).join('')}
+    </nav>
+    <div id="content"></div>
+  `;
+  app.querySelectorAll('nav.tabs button').forEach(btn=>{
+    btn.onclick = () => { state.view = btn.dataset.view; state.openForm = null; renderContent(); render(); };
+  });
+  const refreshBtn = document.getElementById('refreshAll');
+  if(refreshBtn) refreshBtn.onclick = async () => {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = '…';
+    const bundle = await ghLoadBundle();
+    if(bundle){
+      if(bundle.settings) state.settings = bundle.settings;
+      if(bundle.weights) state.weights = bundle.weights;
+      if(bundle.favorites) state.favorites = bundle.favorites;
+      if(bundle.days) state.cache = bundle.days;
+    }
+    refreshBtn.disabled = false;
+    refreshBtn.textContent = '⟳';
+    renderContent();
+  };
+  renderContent();
+}
+
+async function renderContent(){
+  const content = document.getElementById('content');
+  if(!content) return;
+  if(state.view === 'day') return renderDay(content);
+  if(state.view === 'week') return renderWeek(content);
+  if(state.view === 'month') return renderMonth(content);
+  if(state.view === 'weight') return renderWeightView(content);
+  if(state.view === 'settings') return renderSettings(content);
+}
+
+/* ---------- DAY VIEW ---------- */
+async function renderDay(content){
+  const dateStr = ymd(state.currentDate);
+  const data = await loadDay(dateStr);
+  const t = dayTotals(data);
+  const goal = state.settings.dailyGoal;
+  const pct = Math.max(0, Math.min(100, Math.round((t.net / goal) * 100)));
+  const remaining = goal - t.net;
+  const label = fmtDateLabel(state.currentDate);
+  const circumference = 2 * Math.PI * 46;
+  const dash = circumference * (pct/100);
+  const overGoal = t.net > goal;
+
+  content.innerHTML = `
+    <div class="card">
+      <div class="datebar">
+        <button id="prevDay">‹</button>
+        <div class="label">${label.main}<small>${label.sub}</small></div>
+        <button id="nextDay">›</button>
+      </div>
+      <div class="ring-wrap">
+        <div class="ring">
+          <svg width="112" height="112">
+            <circle cx="56" cy="56" r="46" stroke="var(--line)" stroke-width="10" fill="none"/>
+            <circle cx="56" cy="56" r="46" stroke="${overGoal?'var(--rust)':'var(--sage)'}" stroke-width="10" fill="none"
+              stroke-dasharray="${circumference}" stroke-dashoffset="${circumference-dash}" stroke-linecap="round"/>
+          </svg>
+          <div class="center">
+            <div class="num">${t.net}</div>
+            <div class="unit">av ${goal} kcal</div>
+          </div>
+        </div>
+        <div class="statgrid">
+          <div class="stat rust"><div class="k">Intag</div><div class="v">${t.intake}</div></div>
+          <div class="stat sage"><div class="k">Träning</div><div class="v">−${t.burned}</div></div>
+          <div class="stat"><div class="k">Netto</div><div class="v">${t.net}</div></div>
+          <div class="stat"><div class="k">${remaining>=0?'Kvar':'Över'}</div><div class="v" style="color:${remaining>=0?'var(--sage)':'var(--rust)'}">${Math.abs(remaining)}</div></div>
+        </div>
+      </div>
+      <div class="macrorow">
+        ${macroBar('Protein', t.protein, 130)}
+        ${macroBar('Fett', t.fat, 80)}
+        ${macroBar('Kolh.', t.carbs, 200)}
+      </div>
+    </div>
+
+    <div class="sectitle">Måltider</div>
+    ${state.openForm === 'food' ? foodForm() : state.openForm === 'favorites' ? favoritesPanel() : `
+      <div style="display:flex; gap:8px;">
+        <button class="addbtn food" id="addFood" style="flex:1;">+ Lägg till måltid</button>
+        <button class="addbtn" id="showFavorites" style="flex:1; border-color:var(--gold); color:#8A6D2A;">⭐ Favoriter</button>
+      </div>
+    `}
+    ${data.food.length ? data.food.map((f,i)=>entryRow(f,i,'food')).join('') : `<div class="empty">Inga måltider loggade</div>`}
+
+    <div class="sectitle">Träning</div>
+    ${state.openForm === 'exercise' ? exerciseForm() : `<button class="addbtn exercise" id="addExercise">+ Lägg till träning</button>`}
+    ${data.exercise.length ? data.exercise.map((e,i)=>entryRow(e,i,'exercise')).join('') : `<div class="empty">Ingen träning loggad</div>`}
+  `;
+
+  document.getElementById('prevDay').onclick = () => { state.currentDate.setDate(state.currentDate.getDate()-1); renderContent(); };
+  document.getElementById('nextDay').onclick = () => { state.currentDate.setDate(state.currentDate.getDate()+1); renderContent(); };
+
+  const addFoodBtn = document.getElementById('addFood');
+  if(addFoodBtn) addFoodBtn.onclick = () => {
+    state.openForm = 'food';
+    state.foodFormMode = 'quick';
+    state.mealBuilder = [emptyIngredient()];
+    renderContent();
+  };
+  const addExBtn = document.getElementById('addExercise');
+  if(addExBtn) addExBtn.onclick = () => { state.openForm = 'exercise'; renderContent(); };
+
+  const showFavBtn = document.getElementById('showFavorites');
+  if(showFavBtn) showFavBtn.onclick = () => { state.openForm = 'favorites'; renderContent(); };
+
+  content.querySelectorAll('.addfav').forEach(btn => {
+    btn.onclick = async () => {
+      const fav = state.favorites[Number(btn.dataset.idx)];
+      if(!fav) return;
+      const { name, kcal, protein, fat, carbs, components } = fav;
+      data.food.push({ name, kcal, protein, fat, carbs, ...(components ? { components } : {}) });
+      await saveDay(dateStr, data);
+      state.openForm = null;
+      renderContent();
+    };
+  });
+
+  content.querySelectorAll('.delfav').forEach(btn => {
+    btn.onclick = async () => {
+      state.favorites.splice(Number(btn.dataset.idx), 1);
+      await ghSaveBundle();
+      renderContent();
+    };
+  });
+
+  const cancelBtn = document.getElementById('cancelForm');
+  if(cancelBtn) cancelBtn.onclick = () => { state.openForm = null; renderContent(); };
+
+  const saveFoodBtn = document.getElementById('saveFood');
+  if(saveFoodBtn) saveFoodBtn.onclick = async () => {
+    const name = document.getElementById('fName').value.trim();
+    const kcal = Number(document.getElementById('fKcal').value) || 0;
+    const protein = Number(document.getElementById('fProtein').value) || 0;
+    const fat = Number(document.getElementById('fFat').value) || 0;
+    const carbs = Number(document.getElementById('fCarbs').value) || 0;
+    if(!name || !kcal) return;
+    data.food.push({ name, kcal, protein, fat, carbs });
+    await saveDay(dateStr, data);
+    if(document.getElementById('fSaveFav').checked){
+      state.favorites = state.favorites.filter(f => f.name !== name);
+      state.favorites.push({ name, kcal, protein, fat, carbs });
+      await ghSaveBundle();
+    }
+    state.openForm = null;
+    renderContent();
+  };
+
+  const modeQuick = document.getElementById('modeQuick');
+  if(modeQuick) modeQuick.onclick = () => { state.foodFormMode = 'quick'; renderContent(); };
+  const modeBuild = document.getElementById('modeBuild');
+  if(modeBuild) modeBuild.onclick = () => {
+    state.foodFormMode = 'build';
+    if(!state.mealBuilder.length) state.mealBuilder = [emptyIngredient()];
+    renderContent();
+  };
+
+  const addIngBtn = document.getElementById('addIngredient');
+  if(addIngBtn) addIngBtn.onclick = () => { state.mealBuilder.push(emptyIngredient()); renderContent(); };
+
+  content.querySelectorAll('.rmv').forEach(btn => {
+    btn.onclick = () => {
+      const idx = Number(btn.dataset.idx);
+      state.mealBuilder.splice(idx, 1);
+      if(!state.mealBuilder.length) state.mealBuilder = [emptyIngredient()];
+      renderContent();
+    };
+  });
+
+  content.querySelectorAll('.estbtn[id^="estBtn_"]').forEach(btn => {
+    btn.onclick = () => estimateIngredient(Number(btn.dataset.idx));
+  });
+
+  content.querySelectorAll('.estbtn[id^="scanBtn_"]').forEach(btn => {
+    btn.onclick = () => {
+      const idx = btn.dataset.idx;
+      const input = content.querySelector(`.scan-input[data-idx="${idx}"]`);
+      if(input) input.click();
+    };
+  });
+
+  content.querySelectorAll('.scan-input').forEach(input => {
+    input.onchange = () => {
+      const file = input.files && input.files[0];
+      if(file) scanLabel(Number(input.dataset.idx), file);
+      input.value = '';
+    };
+  });
+
+  const fieldMap = {
+    'ing-name': 'name', 'ing-amount': 'amount', 'ing-kcal': 'kcalPer100',
+    'ing-protein': 'proteinPer100', 'ing-fat': 'fatPer100', 'ing-carbs': 'carbsPer100'
+  };
+  Object.keys(fieldMap).forEach(cls => {
+    content.querySelectorAll('.' + cls).forEach(input => {
+      input.oninput = () => {
+        const idx = Number(input.dataset.idx);
+        const key = fieldMap[cls];
+        state.mealBuilder[idx][key] = key === 'name' ? input.value : input.value;
+        updateMealTotalsDOM();
+      };
+    });
+  });
+
+  const saveMealBtn = document.getElementById('saveMeal');
+  if(saveMealBtn) saveMealBtn.onclick = async () => {
+    const components = state.mealBuilder.filter(r => r.name && r.name.trim());
+    if(!components.length) return;
+    const t = computeMealTotals();
+    const nameInput = document.getElementById('buildMealName').value.trim();
+    const name = nameInput || components.map(c => c.name).join(', ');
+    const entry = {
+      name,
+      kcal: Math.round(t.kcal),
+      protein: Math.round(t.protein),
+      fat: Math.round(t.fat),
+      carbs: Math.round(t.carbs),
+      components
+    };
+    data.food.push(entry);
+    await saveDay(dateStr, data);
+    if(document.getElementById('buildSaveFav').checked){
+      state.favorites = state.favorites.filter(f => f.name !== name);
+      state.favorites.push({ ...entry });
+      await ghSaveBundle();
+    }
+    state.openForm = null;
+    state.mealBuilder = [];
+    renderContent();
+  };
+
+  const saveExBtn = document.getElementById('saveEx');
+  if(saveExBtn) saveExBtn.onclick = async () => {
+    const name = document.getElementById('eName').value.trim();
+    const kcal = Number(document.getElementById('eKcal').value) || 0;
+    if(!name || !kcal) return;
+    data.exercise.push({ name, kcal });
+    await saveDay(dateStr, data);
+    state.openForm = null;
+    renderContent();
+  };
+
+  content.querySelectorAll('.entry .del').forEach(btn=>{
+    btn.onclick = async () => {
+      const type = btn.dataset.type, idx = Number(btn.dataset.idx);
+      data[type].splice(idx,1);
+      await saveDay(dateStr, data);
+      renderContent();
+    };
+  });
+}
+
+function macroBar(label, amount, target){
+  const pct = Math.max(0, Math.min(100, Math.round((amount/target)*100)));
+  return `<div class="macro">
+    <div class="bar"><i style="width:${pct}%"></i></div>
+    <div class="amt">${Math.round(amount)}g</div>
+    <div class="lbl">${label}</div>
+  </div>`;
+}
+
+function entryRow(item, idx, type){
+  let sub = '';
+  if(type === 'food'){
+    if(item.components && item.components.length){
+      sub = `<div class="sub">${item.components.length} delar: ${item.components.map(c=>c.name).join(', ')}</div>`;
+    } else {
+      sub = `<div class="sub">P ${item.protein||0}g · F ${item.fat||0}g · K ${item.carbs||0}g</div>`;
+    }
+  }
+  return `<div class="entry ${type}">
+    <div>
+      <div class="name">${item.name}</div>
+      ${sub}
+    </div>
+    <div class="right">
+      <div class="kcal">${type==='exercise'?'−':''}${item.kcal} kcal</div>
+      <button class="del" data-type="${type}" data-idx="${idx}">×</button>
+    </div>
+  </div>`;
+}
+
+function favoritesPanel(){
+  if(!state.favorites.length){
+    return `<div class="form"><div class="empty">Inga favoriter sparade än. Kryssa i "Spara som favorit" när du loggar en måltid.</div>
+      <div class="actions"><button class="cancel" id="cancelForm">Tillbaka</button></div></div>`;
+  }
+  return `<div class="form">
+    ${state.favorites.map((f,i)=>`
+      <div class="entry food" style="margin-bottom:8px;">
+        <div>
+          <div class="name">${f.name}</div>
+          <div class="sub">${f.components && f.components.length ? f.components.length + ' delar' : `P ${f.protein||0}g · F ${f.fat||0}g · K ${f.carbs||0}g`}</div>
+        </div>
+        <div class="right">
+          <div class="kcal">${f.kcal} kcal</div>
+          <button class="del addfav" data-idx="${i}" title="Lägg till idag">＋</button>
+          <button class="del delfav" data-idx="${i}" title="Ta bort favorit">×</button>
+        </div>
+      </div>
+    `).join('')}
+    <div class="actions"><button class="cancel" id="cancelForm">Tillbaka</button></div>
+  </div>`;
+}
+
+function foodForm(){
+  return `<div class="form">
+    <div class="modeswitch">
+      <button id="modeQuick" class="${state.foodFormMode==='quick'?'active':''}">Snabb</button>
+      <button id="modeBuild" class="${state.foodFormMode==='build'?'active':''}">Bygg av flera delar</button>
+    </div>
+    ${state.foodFormMode === 'quick' ? quickFoodForm() : buildMealForm()}
+  </div>`;
+}
+
+function quickFoodForm(){
+  return `
+    <div class="row"><input id="fName" placeholder="Namn, t.ex. Grekisk yoghurt"></div>
+    <div class="row">
+      <input id="fKcal" type="number" placeholder="Kcal">
+      <input id="fProtein" type="number" placeholder="Protein g">
+    </div>
+    <div class="row">
+      <input id="fFat" type="number" placeholder="Fett g">
+      <input id="fCarbs" type="number" placeholder="Kolhydrater g">
+    </div>
+    <label style="display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted); margin-bottom:10px;">
+      <input type="checkbox" id="fSaveFav" style="width:auto;"> Spara som favorit
+    </label>
+    <div class="actions">
+      <button class="cancel" id="cancelForm">Avbryt</button>
+      <button class="save" id="saveFood">Spara</button>
+    </div>
+  `;
+}
+
+function buildMealForm(){
+  const t = computeMealTotals();
+  return `
+    <div class="row"><input id="buildMealName" placeholder="Namn på måltiden (valfritt)"></div>
+    ${state.mealBuilder.map((row,i)=>ingredientRow(row,i)).join('')}
+    <button class="addingbtn" id="addIngredient">+ Lägg till livsmedel</button>
+    <div class="mealtotals">
+      <div class="tot"><span>Totalt</span><b id="buildTotKcal">${Math.round(t.kcal)}</b></div>
+      <div class="tot"><span>Protein</span><b id="buildTotProtein">${Math.round(t.protein)}g</b></div>
+      <div class="tot"><span>Fett</span><b id="buildTotFat">${Math.round(t.fat)}g</b></div>
+      <div class="tot"><span>Kolh.</span><b id="buildTotCarbs">${Math.round(t.carbs)}g</b></div>
+    </div>
+    <label style="display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted); margin-bottom:10px;">
+      <input type="checkbox" id="buildSaveFav" style="width:auto;"> Spara som favorit
+    </label>
+    <div class="actions">
+      <button class="cancel" id="cancelForm">Avbryt</button>
+      <button class="save" id="saveMeal">Spara måltid</button>
+    </div>
+  `;
+}
+
+function ingredientRow(row, idx){
+  return `<div class="ingcard">
+    <div class="toprow">
+      <input class="ing-name" data-idx="${idx}" placeholder="Livsmedel, t.ex. Kycklingfilé" value="${row.name}">
+      <button class="rmv" data-idx="${idx}">×</button>
+    </div>
+    <div style="display:flex; gap:6px;">
+      <button class="estbtn" id="estBtn_${idx}" data-idx="${idx}" style="flex:1;">✨ Uppskatta</button>
+      <button class="estbtn" id="scanBtn_${idx}" data-idx="${idx}" style="flex:1;">📷 Skanna etikett</button>
+    </div>
+    <input type="file" accept="image/*" capture="environment" class="scan-input" data-idx="${idx}" style="display:none">
+    <div class="est-status" id="estStatus_${idx}"></div>
+    <div class="fieldgrid">
+      <div><label>Mängd (g)</label><input class="ing-amount" data-idx="${idx}" type="number" value="${row.amount}"></div>
+      <div><label>Kcal / 100g</label><input class="ing-kcal" data-idx="${idx}" type="number" value="${row.kcalPer100}"></div>
+    </div>
+    <div class="fieldgrid">
+      <div><label>Protein / 100g</label><input class="ing-protein" data-idx="${idx}" type="number" value="${row.proteinPer100}"></div>
+      <div><label>Fett / 100g</label><input class="ing-fat" data-idx="${idx}" type="number" value="${row.fatPer100}"></div>
+    </div>
+    <div class="fieldgrid">
+      <div><label>Kolhydrater / 100g</label><input class="ing-carbs" data-idx="${idx}" type="number" value="${row.carbsPer100}"></div>
+      <div></div>
+    </div>
+    <div class="sub" id="ingSub_${idx}">≈ ${ingredientSubKcal(row)} kcal</div>
+  </div>`;
+}
+
+function fileToBase64(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function callAnthropic(payload){
+  if(!state.aiKey){
+    throw new Error('Ingen Anthropic API-nyckel angiven (se Inställningar)');
+  }
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': state.aiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify(payload)
+  });
+  if(!res.ok){
+    const t = await res.text().catch(() => '');
+    throw new Error(`API svarade ${res.status}: ${t.slice(0,150)}`);
+  }
+  return await res.json();
+}
+
+async function estimateIngredient(idx){
+  const row = state.mealBuilder[idx];
+  const statusEl = document.getElementById('estStatus_' + idx);
+  if(!row || !row.name || !row.name.trim()){
+    if(statusEl) statusEl.textContent = 'Skriv in ett livsmedel först.';
+    return;
+  }
+  const btn = document.getElementById('estBtn_' + idx);
+  if(btn){ btn.disabled = true; btn.textContent = 'Uppskattar…'; }
+  if(statusEl) statusEl.textContent = '';
+  try{
+    const data = await callAnthropic({
+      model: "claude-sonnet-4-6",
+      max_tokens: 300,
+      messages: [{
+        role: "user",
+        content: `Du är en näringsdatabas. Ge en realistisk uppskattning av näringsinnehåll per 100 gram för livsmedlet: "${row.name}". Anta vanligast förekommande beredning/tillagningssätt om inget annat anges. Svara ENDAST med ett JSON-objekt, inga förklaringar, ingen markdown, inga kodstaket. Format exakt: {"kcalPer100": number, "proteinPer100": number, "fatPer100": number, "carbsPer100": number}`
+      }]
+    });
+    const textBlock = (data.content || []).find(b => b.type === 'text');
+    if(!textBlock) throw new Error('Tomt svar från modellen');
+    const cleaned = textBlock.text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+
+    row.kcalPer100 = Math.round(Number(parsed.kcalPer100) || 0);
+    row.proteinPer100 = Math.round((Number(parsed.proteinPer100) || 0) * 10) / 10;
+    row.fatPer100 = Math.round((Number(parsed.fatPer100) || 0) * 10) / 10;
+    row.carbsPer100 = Math.round((Number(parsed.carbsPer100) || 0) * 10) / 10;
+
+    const setVal = (cls, val) => {
+      const el = document.querySelector(`.${cls}[data-idx="${idx}"]`);
+      if(el) el.value = val;
+    };
+    setVal('ing-kcal', row.kcalPer100);
+    setVal('ing-protein', row.proteinPer100);
+    setVal('ing-fat', row.fatPer100);
+    setVal('ing-carbs', row.carbsPer100);
+    updateMealTotalsDOM();
+  } catch(e){
+    console.error('Estimation failed', e);
+    if(statusEl) statusEl.textContent = 'Fel: ' + (e && e.message ? e.message : 'okänt fel') + '. Fyll i manuellt.';
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = '✨ Uppskatta'; }
+  }
+}
+
+async function scanLabel(idx, file){
+  const row = state.mealBuilder[idx];
+  if(!row) return;
+  const btn = document.getElementById('scanBtn_' + idx);
+  const statusEl = document.getElementById('estStatus_' + idx);
+  const original = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = 'Läser bilden…'; }
+  if(statusEl) statusEl.textContent = '';
+  try{
+    const base64 = await fileToBase64(file);
+    const mediaType = file.type || 'image/jpeg';
+    const data = await callAnthropic({
+      model: "claude-sonnet-4-6",
+      max_tokens: 400,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+          { type: "text", text: `Läs näringsdeklarationen på bilden. Om värdena anges per annan mängd än 100 g, räkna om till PER 100 GRAM. Svara ENDAST med ett JSON-objekt, ingen förklaring, ingen markdown, inga kodstaket. Format exakt: {"name": string, "kcalPer100": number, "proteinPer100": number, "fatPer100": number, "carbsPer100": number}` }
+        ]
+      }]
+    });
+    const textBlock = (data.content || []).find(b => b.type === 'text');
+    if(!textBlock) throw new Error('Tomt svar från modellen');
+    const cleaned = textBlock.text.replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+
+    row.kcalPer100 = Math.round(Number(parsed.kcalPer100) || 0);
+    row.proteinPer100 = Math.round((Number(parsed.proteinPer100) || 0) * 10) / 10;
+    row.fatPer100 = Math.round((Number(parsed.fatPer100) || 0) * 10) / 10;
+    row.carbsPer100 = Math.round((Number(parsed.carbsPer100) || 0) * 10) / 10;
+    if(parsed.name && !row.name.trim()) row.name = String(parsed.name).trim();
+
+    const setVal = (cls, val) => {
+      const el = document.querySelector(`.${cls}[data-idx="${idx}"]`);
+      if(el) el.value = val;
+    };
+    setVal('ing-name', row.name);
+    setVal('ing-kcal', row.kcalPer100);
+    setVal('ing-protein', row.proteinPer100);
+    setVal('ing-fat', row.fatPer100);
+    setVal('ing-carbs', row.carbsPer100);
+    updateMealTotalsDOM();
+  } catch(e){
+    console.error('Label scan failed', e);
+    if(statusEl) statusEl.textContent = 'Fel: ' + (e && e.message ? e.message : 'okänt fel') + '. Prova igen eller fyll i manuellt.';
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = original || '📷 Skanna etikett'; }
+  }
+}
+
+function exerciseForm(){
+  return `<div class="form">
+    <div class="row"><input id="eName" placeholder="Namn, t.ex. Löpning 5 km"></div>
+    <div class="row"><input id="eKcal" type="number" placeholder="Förbrända kcal"></div>
+    <div class="actions">
+      <button class="cancel" id="cancelForm">Avbryt</button>
+      <button class="save" id="saveEx">Spara</button>
+    </div>
+  </div>`;
+}
+
+/* ---------- WEEK VIEW ---------- */
+async function renderWeek(content){
+  content.innerHTML = `<div class="card"><div class="empty">Laddar vecka…</div></div>`;
+  const days = [];
+  const base = new Date(state.currentDate);
+  const dow = (base.getDay()+6)%7; // Monday=0
+  base.setDate(base.getDate()-dow);
+  for(let i=0;i<7;i++){
+    const d = new Date(base); d.setDate(base.getDate()+i);
+    days.push(d);
+  }
+  const results = [];
+  for(const d of days){
+    const data = await loadDay(ymd(d));
+    results.push({ date: d, totals: dayTotals(data) });
+  }
+  const goal = state.settings.dailyGoal;
+  const maxVal = Math.max(goal*1.3, ...results.map(r=>r.totals.net), 1);
+  const avgNet = Math.round(results.reduce((s,r)=>s+r.totals.net,0)/7);
+  const totalBurned = results.reduce((s,r)=>s+r.totals.burned,0);
+  const dayLabels = ['M','T','O','T','F','L','S'];
+
+  content.innerHTML = `
+    <div class="card">
+      <div class="datebar">
+        <button id="prevWeek">‹</button>
+        <div class="label">Vecka ${weekNumber(days[0])}<small>${fmtRange(days[0], days[6])}</small></div>
+        <button id="nextWeek">›</button>
+      </div>
+      <div class="barchart">
+        ${results.map((r,i)=>{
+          const h = Math.round((r.totals.net/maxVal)*110);
+          const goalH = Math.round((goal/maxVal)*110);
+          const over = r.totals.net > goal;
+          return `<div class="barcol">
+            <div class="track" style="height:110px;">
+              <div class="goalline" style="bottom:${goalH}px"></div>
+              <div class="fill ${over?'over':'under'}" style="height:${h}px"></div>
+            </div>
+            <div class="day">${dayLabels[i]}</div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="summaryrow">
+        <div class="stat"><div class="k">Snitt netto/dag</div><div class="v">${avgNet}</div></div>
+        <div class="stat sage"><div class="k">Träning totalt</div><div class="v">−${totalBurned}</div></div>
+        <div class="stat"><div class="k">Mål/dag</div><div class="v">${goal}</div></div>
+      </div>
+    </div>
+  `;
+  document.getElementById('prevWeek').onclick = () => { state.currentDate.setDate(state.currentDate.getDate()-7); renderContent(); };
+  document.getElementById('nextWeek').onclick = () => { state.currentDate.setDate(state.currentDate.getDate()+7); renderContent(); };
+}
+
+function weekNumber(d){
+  const target = new Date(d.valueOf());
+  const dayNr = (d.getDay()+6)%7;
+  target.setDate(target.getDate()-dayNr+3);
+  const firstThursday = new Date(target.getFullYear(),0,4);
+  const diff = target - firstThursday;
+  return 1 + Math.round(diff/(7*24*60*60*1000));
+}
+function fmtRange(a,b){
+  const mn = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
+  return `${a.getDate()} ${mn[a.getMonth()]} – ${b.getDate()} ${mn[b.getMonth()]}`;
+}
+
+/* ---------- MONTH VIEW ---------- */
+async function renderMonth(content){
+  content.innerHTML = `<div class="card"><div class="empty">Laddar månad…</div></div>`;
+  const year = state.currentDate.getFullYear();
+  const month = state.currentDate.getMonth();
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const results = [];
+  for(let day=1; day<=daysInMonth; day++){
+    const d = new Date(year, month, day);
+    const data = await loadDay(ymd(d));
+    results.push({ date: d, totals: dayTotals(data) });
+  }
+  const goal = state.settings.dailyGoal;
+  const loggedDays = results.filter(r=>r.totals.intake>0);
+  const avgNet = loggedDays.length ? Math.round(loggedDays.reduce((s,r)=>s+r.totals.net,0)/loggedDays.length) : 0;
+  const daysUnderGoal = results.filter(r=>r.totals.intake>0 && r.totals.net<=goal).length;
+  const maxVal = Math.max(goal*1.3, ...results.map(r=>r.totals.net), 1);
+  const mn = ['Januari','Februari','Mars','April','Maj','Juni','Juli','Augusti','September','Oktober','November','December'];
+
+  // weight change during month
+  const weights = state.weights.filter(w => w.date >= ymd(new Date(year,month,1)) && w.date <= ymd(new Date(year,month,daysInMonth)));
+  let weightChange = null;
+  if(weights.length >= 2){
+    weightChange = (weights[weights.length-1].kg - weights[0].kg).toFixed(1);
+  }
+
+  content.innerHTML = `
+    <div class="card">
+      <div class="datebar">
+        <button id="prevMonth">‹</button>
+        <div class="label">${mn[month]} ${year}</div>
+        <button id="nextMonth">›</button>
+      </div>
+      <div class="barchart">
+        ${results.map(r=>{
+          const h = Math.round((r.totals.net/maxVal)*110);
+          const over = r.totals.net > goal;
+          const hasData = r.totals.intake > 0;
+          return `<div class="barcol">
+            <div class="track" style="height:110px;">
+              <div class="fill ${hasData ? (over?'over':'under') : ''}" style="height:${hasData?h:0}px; background:${hasData?'':'transparent'}"></div>
+            </div>
+            <div class="day">${r.date.getDate()}</div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="summaryrow">
+        <div class="stat"><div class="k">Snitt netto</div><div class="v">${avgNet}</div></div>
+        <div class="stat sage"><div class="k">Dagar under mål</div><div class="v">${daysUnderGoal}/${loggedDays.length}</div></div>
+        <div class="stat ${weightChange<0?'sage':'rust'}"><div class="k">Vikt denna månad</div><div class="v">${weightChange!==null ? (weightChange>0?'+':'')+weightChange+' kg' : '—'}</div></div>
+      </div>
+    </div>
+  `;
+  document.getElementById('prevMonth').onclick = () => { state.currentDate.setMonth(state.currentDate.getMonth()-1); renderContent(); };
+  document.getElementById('nextMonth').onclick = () => { state.currentDate.setMonth(state.currentDate.getMonth()+1); renderContent(); };
+}
+
+/* ---------- WEIGHT VIEW ---------- */
+async function renderWeightView(content){
+  const weights = [...state.weights].sort((a,b)=>a.date.localeCompare(b.date));
+  const latest = weights.length ? weights[weights.length-1].kg : state.settings.startWeight;
+  const toGoal = (latest - state.settings.targetWeight).toFixed(1);
+  const totalLost = (state.settings.startWeight - latest).toFixed(1);
+
+  content.innerHTML = `
+    <div class="card">
+      <div class="statgrid" style="margin-bottom:14px;">
+        <div class="stat"><div class="k">Nuvarande</div><div class="v">${latest} kg</div></div>
+        <div class="stat sage"><div class="k">Tappat hittills</div><div class="v">${totalLost} kg</div></div>
+        <div class="stat"><div class="k">Kvar till mål</div><div class="v">${toGoal} kg</div></div>
+        <div class="stat"><div class="k">Målvikt</div><div class="v">${state.settings.targetWeight} kg</div></div>
+      </div>
+      ${weights.length >= 2 ? `<svg class="weightgraph" viewBox="0 0 300 120" preserveAspectRatio="none">${weightSvg(weights)}</svg>` : `<div class="empty">Logga minst 2 vikter för att se en graf</div>`}
+    </div>
+    <div class="card">
+      <div class="weightform">
+        <input id="wDate" type="date" value="${todayYmd()}">
+        <input id="wKg" type="number" step="0.1" placeholder="Vikt (kg)">
+        <button id="wSave">Spara</button>
+      </div>
+      ${weights.slice().reverse().slice(0,15).map(w=>`<div class="wentry"><span class="d">${w.date}</span><span>${w.kg} kg</span></div>`).join('') || `<div class="empty">Ingen vikt loggad än</div>`}
+    </div>
+  `;
+  document.getElementById('wSave').onclick = async () => {
+    const date = document.getElementById('wDate').value;
+    const kg = Number(document.getElementById('wKg').value);
+    if(!date || !kg) return;
+    const existingIdx = state.weights.findIndex(w=>w.date===date);
+    if(existingIdx>=0) state.weights[existingIdx].kg = kg;
+    else state.weights.push({date, kg});
+    await ghSaveBundle();
+    renderContent();
+  };
+}
+
+function weightSvg(weights){
+  const kgs = weights.map(w=>w.kg);
+  const min = Math.min(...kgs)-1, max = Math.max(...kgs)+1;
+  const pts = weights.map((w,i)=>{
+    const x = (i/(weights.length-1))*290+5;
+    const y = 110 - ((w.kg-min)/(max-min))*100;
+    return `${x},${y}`;
+  }).join(' ');
+  return `<polyline points="${pts}" fill="none" stroke="var(--sage)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>` +
+    weights.map((w,i)=>{
+      const x = (i/(weights.length-1))*290+5;
+      const y = 110 - ((w.kg-min)/(max-min))*100;
+      return `<circle cx="${x}" cy="${y}" r="3" fill="var(--sage)"/>`;
+    }).join('');
+}
+
+/* ---------- SETTINGS ---------- */
+function renderSettings(content){
+  const gh = state.gh;
+  content.innerHTML = `
+    <div class="card">
+      <div class="settingsrow">
+        <label>Dagligt kalorimål (netto)</label>
+        <input id="sGoal" type="number" value="${state.settings.dailyGoal}">
+      </div>
+      <div class="settingsrow">
+        <label>Startvikt (kg)</label>
+        <input id="sStart" type="number" step="0.1" value="${state.settings.startWeight}">
+      </div>
+      <div class="settingsrow">
+        <label>Målvikt (kg)</label>
+        <input id="sTarget" type="number" step="0.1" value="${state.settings.targetWeight}">
+      </div>
+      <button class="addbtn" id="sSave" style="border-style:solid; color:#fff; background:var(--ink); border-color:var(--ink);">Spara inställningar</button>
+    </div>
+
+    <div class="sectitle">Synk (GitHub)</div>
+    <div class="card">
+      <div class="empty" style="text-align:left; padding:0 0 10px;">
+        Skapa en privat repo på GitHub (t.ex. "kaloridagbok-data") och en Personal Access Token
+        med skriv/läs-rättighet till den repon. Fyll i här – sparas bara i den här webbläsaren.
+      </div>
+      <div class="settingsrow"><label>GitHub-användarnamn</label><input id="ghOwner" value="${gh.owner}" placeholder="t.ex. eriksson"></div>
+      <div class="settingsrow"><label>Repo-namn (privat)</label><input id="ghRepo" value="${gh.repo}" placeholder="kaloridagbok-data"></div>
+      <div class="settingsrow"><label>Personal Access Token</label><input id="ghToken" type="password" value="${gh.token}" placeholder="ghp_..."></div>
+      <div class="settingsrow"><label>Branch</label><input id="ghBranch" value="${gh.branch || 'main'}"></div>
+      <button class="addbtn" id="ghSave" style="border-style:solid; color:#fff; background:var(--sage); border-color:var(--sage);">Spara & anslut</button>
+      <div class="est-status" id="ghStatus" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="sectitle">AI-uppskattning (valfritt)</div>
+    <div class="card">
+      <div class="empty" style="text-align:left; padding:0 0 10px;">
+        För att använda ✨ Uppskatta och 📷 Skanna etikett, skapa en API-nyckel på
+        console.anthropic.com och klistra in den här. Sparas bara i den här webbläsaren.
+      </div>
+      <div class="settingsrow"><label>Anthropic API-nyckel</label><input id="aiKeyInput" type="password" value="${state.aiKey}" placeholder="sk-ant-..."></div>
+      <button class="addbtn" id="aiKeySave" style="border-style:solid; color:#fff; background:var(--ink); border-color:var(--ink);">Spara nyckel</button>
+      <div class="est-status" id="aiKeyStatus" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="sectitle">Manuell export/import (reserv)</div>
+    <div class="card">
+      <div class="empty" style="text-align:left; padding:0 0 10px;">
+        Fungerar oavsett GitHub-anslutning. Exportera på ena enheten, klistra in + importera på den andra.
+      </div>
+      <textarea id="syncData" rows="5" style="width:100%; border:1px solid var(--line); border-radius:9px; padding:9px; font-size:12px; font-family:monospace; margin-bottom:10px;" placeholder="Exporterad data visas här..."></textarea>
+      <div class="actions">
+        <button class="cancel" id="exportData">Exportera</button>
+        <button class="save" id="importData">Importera</button>
+      </div>
+      <div class="est-status" id="syncIOStatus" style="margin-top:8px;"></div>
+    </div>
+  `;
+  document.getElementById('sSave').onclick = async () => {
+    state.settings.dailyGoal = Number(document.getElementById('sGoal').value) || state.settings.dailyGoal;
+    state.settings.startWeight = Number(document.getElementById('sStart').value) || state.settings.startWeight;
+    state.settings.targetWeight = Number(document.getElementById('sTarget').value) || state.settings.targetWeight;
+    await ghSaveBundle();
+    renderContent();
+  };
+
+  const ghStatus = document.getElementById('ghStatus');
+  document.getElementById('ghSave').onclick = async () => {
+    state.gh.owner = document.getElementById('ghOwner').value.trim();
+    state.gh.repo = document.getElementById('ghRepo').value.trim();
+    state.gh.token = document.getElementById('ghToken').value.trim();
+    state.gh.branch = document.getElementById('ghBranch').value.trim() || 'main';
+    saveGhConfig();
+    ghStatus.textContent = 'Ansluter…';
+    const bundle = await ghLoadBundle();
+    if(bundle){
+      if(bundle.settings) state.settings = bundle.settings;
+      if(bundle.weights) state.weights = bundle.weights;
+      if(bundle.favorites) state.favorites = bundle.favorites;
+      if(bundle.days) state.cache = bundle.days;
+      ghStatus.innerHTML = '<span style="color:var(--sage)">✓ Anslutet och data hämtad.</span>';
+    } else if(ghConfigured()){
+      ghStatus.innerHTML = '<span style="color:var(--sage)">✓ Anslutet (ingen data i repo ännu — sparas vid första loggning).</span>';
+    } else {
+      ghStatus.innerHTML = '<span style="color:var(--rust)">Fyll i alla fält.</span>';
+    }
+    renderContent();
+  };
+
+  const aiKeyStatus = document.getElementById('aiKeyStatus');
+  document.getElementById('aiKeySave').onclick = () => {
+    saveAiKey(document.getElementById('aiKeyInput').value.trim());
+    aiKeyStatus.innerHTML = '<span style="color:var(--sage)">✓ Sparad.</span>';
+  };
+
+  const ioStatus = document.getElementById('syncIOStatus');
+
+  document.getElementById('exportData').onclick = async () => {
+    try{
+      const bundle = {
+        exportedAt: new Date().toISOString(),
+        settings: state.settings,
+        weights: state.weights,
+        favorites: state.favorites,
+        days: state.cache
+      };
+      const json = JSON.stringify(bundle);
+      document.getElementById('syncData').value = json;
+      try{
+        await navigator.clipboard.writeText(json);
+        ioStatus.innerHTML = '<span style="color:var(--sage)">✓ Kopierat till urklipp.</span>';
+      }catch(clipErr){
+        ioStatus.innerHTML = '<span style="color:var(--sage)">✓ Klart. Markera texten ovan manuellt och kopiera.</span>';
+      }
+    }catch(e){
+      console.error('Export failed', e);
+      ioStatus.innerHTML = `<span style="color:var(--rust)">Kunde inte exportera: ${(e.message||'').slice(0,100)}</span>`;
+    }
+  };
+
+  document.getElementById('importData').onclick = async () => {
+    const raw = document.getElementById('syncData').value.trim();
+    if(!raw){ ioStatus.textContent = 'Klistra in exporterad data först.'; return; }
+    ioStatus.textContent = 'Importerar…';
+    try{
+      const bundle = JSON.parse(raw);
+      if(bundle.settings) state.settings = bundle.settings;
+      if(bundle.weights) state.weights = bundle.weights;
+      if(bundle.favorites) state.favorites = bundle.favorites;
+      if(bundle.days) state.cache = bundle.days;
+      await ghSaveBundle();
+      ioStatus.innerHTML = '<span style="color:var(--sage)">✓ Importerat och sparat till GitHub!</span>';
+      renderContent();
+    }catch(e){
+      console.error('Import failed', e);
+      ioStatus.innerHTML = `<span style="color:var(--rust)">Kunde inte importera: ${(e.message||'').slice(0,100)}.</span>`;
+    }
+  };
+}
+
+/* ---------- INIT ---------- */
+async function init(){
+  loadGhConfig();
+  loadAiKey();
+  if(ghConfigured()){
+    const bundle = await ghLoadBundle();
+    if(bundle){
+      if(bundle.settings) state.settings = bundle.settings;
+      if(bundle.weights) state.weights = bundle.weights;
+      if(bundle.favorites) state.favorites = bundle.favorites;
+      if(bundle.days) state.cache = bundle.days;
+    }
+  }
+  render();
+}
+init();
+</script>
+</body>
+</html>
