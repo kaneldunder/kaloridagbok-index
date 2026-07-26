@@ -170,6 +170,12 @@
   }
   .estbtn:disabled{opacity:.6; cursor:default;}
   .est-status{font-size:11px; color:var(--rust); margin-bottom:6px; min-height:14px; line-height:1.4;}
+  .unitswitch{display:flex; gap:5px; margin-bottom:8px;}
+  .unitswitch button{
+    flex:1; border:1px solid var(--line); background:#fff; border-radius:7px;
+    padding:6px; font-size:11.5px; font-weight:600; color:var(--muted); cursor:pointer;
+  }
+  .unitswitch button.active{background:var(--sage); color:#fff; border-color:var(--sage);}
   .mealtotals{
     display:flex; justify-content:space-between; background:var(--sage-light); border-radius:10px;
     padding:10px 12px; margin-bottom:10px; font-size:12.5px;
@@ -259,11 +265,18 @@ function ghConfigured(){
 }
 
 function emptyIngredient(){
-  return { name:'', amount:100, kcalPer100:0, proteinPer100:0, fatPer100:0, carbsPer100:0 };
+  return { name:'', unit:'g', amount:100, kcalPer100:0, proteinPer100:0, fatPer100:0, carbsPer100:0 };
+}
+/* Faktor att multiplicera näringsvärdena med.
+   unit 'g'  -> värdena är per 100 g, mängd i gram
+   unit 'st' -> värdena är per 1 styck, mängd i antal */
+function ingredientFactor(row){
+  const amt = Number(row.amount)||0;
+  return row.unit === 'st' ? amt : amt/100;
 }
 function computeMealTotals(){
   return state.mealBuilder.reduce((acc, row) => {
-    const factor = (Number(row.amount)||0) / 100;
+    const factor = ingredientFactor(row);
     acc.kcal += factor * (Number(row.kcalPer100)||0);
     acc.protein += factor * (Number(row.proteinPer100)||0);
     acc.fat += factor * (Number(row.fatPer100)||0);
@@ -272,7 +285,10 @@ function computeMealTotals(){
   }, { kcal:0, protein:0, fat:0, carbs:0 });
 }
 function ingredientSubKcal(row){
-  return Math.round(((Number(row.amount)||0)/100) * (Number(row.kcalPer100)||0));
+  return Math.round(ingredientFactor(row) * (Number(row.kcalPer100)||0));
+}
+function unitLabel(row){
+  return row.unit === 'st' ? '/ st' : '/ 100g';
 }
 function updateMealTotalsDOM(){
   const t = computeMealTotals();
@@ -616,6 +632,23 @@ async function renderDay(content){
     btn.onclick = () => estimateIngredient(Number(btn.dataset.idx));
   });
 
+  const quickEstBtn = document.getElementById('quickEstBtn');
+  if(quickEstBtn) quickEstBtn.onclick = () => estimateQuickMeal();
+
+  content.querySelectorAll('.unit-btn').forEach(btn => {
+    btn.onclick = () => {
+      const idx = Number(btn.dataset.idx);
+      const newUnit = btn.dataset.unit;
+      const row = state.mealBuilder[idx];
+      if(row.unit === newUnit) return;
+      row.unit = newUnit;
+      // Rimliga standardmängder och nollställ näringsvärden (de byter betydelse)
+      row.amount = newUnit === 'st' ? 1 : 100;
+      row.kcalPer100 = 0; row.proteinPer100 = 0; row.fatPer100 = 0; row.carbsPer100 = 0;
+      renderContent();
+    };
+  });
+
   content.querySelectorAll('.estbtn[id^="scanBtn_"]').forEach(btn => {
     btn.onclick = () => {
       const idx = btn.dataset.idx;
@@ -708,7 +741,10 @@ function entryRow(item, idx, type){
   let sub = '';
   if(type === 'food'){
     if(item.components && item.components.length){
-      sub = `<div class="sub">${item.components.length} delar: ${item.components.map(c=>c.name).join(', ')}</div>`;
+      sub = `<div class="sub">${item.components.length} delar: ${item.components.map(c=>{
+        const amt = Number(c.amount)||0;
+        return c.unit === 'st' ? `${amt} st ${c.name}` : `${c.name} ${amt}g`;
+      }).join(', ')}</div>`;
     } else {
       sub = `<div class="sub">P ${item.protein||0}g · F ${item.fat||0}g · K ${item.carbs||0}g</div>`;
     }
@@ -760,7 +796,9 @@ function foodForm(){
 
 function quickFoodForm(){
   return `
-    <div class="row"><input id="fName" placeholder="Namn, t.ex. Grekisk yoghurt"></div>
+    <div class="row"><input id="fName" placeholder="T.ex. 2 ägg och en banan"></div>
+    <button class="estbtn" id="quickEstBtn" style="width:100%; margin-bottom:8px;">✨ Uppskatta hela måltiden</button>
+    <div class="est-status" id="quickEstStatus"></div>
     <div class="row">
       <input id="fKcal" type="number" placeholder="Kcal">
       <input id="fProtein" type="number" placeholder="Protein g">
@@ -777,6 +815,51 @@ function quickFoodForm(){
       <button class="save" id="saveFood">Spara</button>
     </div>
   `;
+}
+
+async function estimateQuickMeal(){
+  const nameEl = document.getElementById('fName');
+  const statusEl = document.getElementById('quickEstStatus');
+  const btn = document.getElementById('quickEstBtn');
+  const desc = nameEl ? nameEl.value.trim() : '';
+  if(!desc){
+    if(statusEl){ statusEl.style.color = 'var(--rust)'; statusEl.textContent = 'Beskriv måltiden först, t.ex. "2 ägg och en banan".'; }
+    return;
+  }
+  if(btn){ btn.disabled = true; btn.textContent = 'Uppskattar…'; }
+  if(statusEl) statusEl.textContent = '';
+  try{
+    const data = await callAnthropic({
+      model: "claude-sonnet-4-6",
+      max_tokens: 400,
+      messages: [{
+        role: "user",
+        content: `Du är en näringsdatabas. Uppskatta TOTALT näringsinnehåll för hela denna måltid: "${desc}". Om mängder anges i styck eller vardagliga mått, utgå från typiska svenska normalstorlekar. Anta vanligast förekommande beredning. Svara ENDAST med ett JSON-objekt, inga förklaringar, ingen markdown, inga kodstaket. Format exakt: {"kcal": number, "protein": number, "fat": number, "carbs": number, "antaganden": "kort text om vilka storlekar du utgått från"}`
+      }]
+    });
+    const textBlock = (data.content || []).find(b => b.type === 'text');
+    if(!textBlock) throw new Error('Tomt svar från modellen');
+    const parsed = JSON.parse(textBlock.text.replace(/```json|```/g, '').trim());
+
+    const setVal = (id, v) => { const el = document.getElementById(id); if(el) el.value = v; };
+    setVal('fKcal', Math.round(Number(parsed.kcal) || 0));
+    setVal('fProtein', Math.round((Number(parsed.protein) || 0) * 10) / 10);
+    setVal('fFat', Math.round((Number(parsed.fat) || 0) * 10) / 10);
+    setVal('fCarbs', Math.round((Number(parsed.carbs) || 0) * 10) / 10);
+
+    if(statusEl){
+      statusEl.style.color = 'var(--muted)';
+      statusEl.textContent = parsed.antaganden ? 'Antagande: ' + parsed.antaganden : '';
+    }
+  } catch(e){
+    console.error('Quick estimation failed', e);
+    if(statusEl){
+      statusEl.style.color = 'var(--rust)';
+      statusEl.textContent = 'Fel: ' + (e && e.message ? e.message : 'okänt fel') + '. Fyll i manuellt.';
+    }
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = '✨ Uppskatta hela måltiden'; }
+  }
 }
 
 function buildMealForm(){
@@ -802,10 +885,16 @@ function buildMealForm(){
 }
 
 function ingredientRow(row, idx){
+  const u = unitLabel(row);
+  const isSt = row.unit === 'st';
   return `<div class="ingcard">
     <div class="toprow">
-      <input class="ing-name" data-idx="${idx}" placeholder="Livsmedel, t.ex. Kycklingfilé" value="${row.name}">
+      <input class="ing-name" data-idx="${idx}" placeholder="${isSt ? 'T.ex. Banan, Korv med bröd' : 'Livsmedel, t.ex. Kycklingfilé'}" value="${row.name}">
       <button class="rmv" data-idx="${idx}">×</button>
+    </div>
+    <div class="unitswitch">
+      <button class="unit-btn ${!isSt?'active':''}" data-idx="${idx}" data-unit="g">Gram</button>
+      <button class="unit-btn ${isSt?'active':''}" data-idx="${idx}" data-unit="st">Styck</button>
     </div>
     <div style="display:flex; gap:6px;">
       <button class="estbtn" id="estBtn_${idx}" data-idx="${idx}" style="flex:1;">✨ Uppskatta</button>
@@ -814,15 +903,15 @@ function ingredientRow(row, idx){
     <input type="file" accept="image/*" capture="environment" class="scan-input" data-idx="${idx}" style="display:none">
     <div class="est-status" id="estStatus_${idx}"></div>
     <div class="fieldgrid">
-      <div><label>Mängd (g)</label><input class="ing-amount" data-idx="${idx}" type="number" value="${row.amount}"></div>
-      <div><label>Kcal / 100g</label><input class="ing-kcal" data-idx="${idx}" type="number" value="${row.kcalPer100}"></div>
+      <div><label>${isSt ? 'Antal (st)' : 'Mängd (g)'}</label><input class="ing-amount" data-idx="${idx}" type="number" step="${isSt?'0.5':'1'}" value="${row.amount}"></div>
+      <div><label>Kcal ${u}</label><input class="ing-kcal" data-idx="${idx}" type="number" value="${row.kcalPer100}"></div>
     </div>
     <div class="fieldgrid">
-      <div><label>Protein / 100g</label><input class="ing-protein" data-idx="${idx}" type="number" value="${row.proteinPer100}"></div>
-      <div><label>Fett / 100g</label><input class="ing-fat" data-idx="${idx}" type="number" value="${row.fatPer100}"></div>
+      <div><label>Protein ${u}</label><input class="ing-protein" data-idx="${idx}" type="number" value="${row.proteinPer100}"></div>
+      <div><label>Fett ${u}</label><input class="ing-fat" data-idx="${idx}" type="number" value="${row.fatPer100}"></div>
     </div>
     <div class="fieldgrid">
-      <div><label>Kolhydrater / 100g</label><input class="ing-carbs" data-idx="${idx}" type="number" value="${row.carbsPer100}"></div>
+      <div><label>Kolhydrater ${u}</label><input class="ing-carbs" data-idx="${idx}" type="number" value="${row.carbsPer100}"></div>
       <div></div>
     </div>
     <div class="sub" id="ingSub_${idx}">≈ ${ingredientSubKcal(row)} kcal</div>
@@ -870,13 +959,14 @@ async function estimateIngredient(idx){
   if(btn){ btn.disabled = true; btn.textContent = 'Uppskattar…'; }
   if(statusEl) statusEl.textContent = '';
   try{
+    const perPiece = row.unit === 'st';
+    const prompt = perPiece
+      ? `Du är en näringsdatabas. Uppskatta näringsinnehållet för EN (1) normalstor portion/enhet av: "${row.name}". Utgå från en typisk svensk normalstorlek (t.ex. 1 medelstor banan ≈ 120 g ätlig del, 1 korv med bröd = korv + bröd inkl. vanliga tillbehör). Anta vanligast förekommande beredning. Svara ENDAST med ett JSON-objekt, inga förklaringar, ingen markdown, inga kodstaket. Fälten avser innehållet PER STYCK. Format exakt: {"kcalPer100": number, "proteinPer100": number, "fatPer100": number, "carbsPer100": number, "antagenVikt": "kort text, t.ex. 1 medelstor banan ca 120 g"}`
+      : `Du är en näringsdatabas. Ge en realistisk uppskattning av näringsinnehåll per 100 gram för livsmedlet: "${row.name}". Anta vanligast förekommande beredning/tillagningssätt om inget annat anges. Svara ENDAST med ett JSON-objekt, inga förklaringar, ingen markdown, inga kodstaket. Format exakt: {"kcalPer100": number, "proteinPer100": number, "fatPer100": number, "carbsPer100": number}`;
     const data = await callAnthropic({
       model: "claude-sonnet-4-6",
       max_tokens: 300,
-      messages: [{
-        role: "user",
-        content: `Du är en näringsdatabas. Ge en realistisk uppskattning av näringsinnehåll per 100 gram för livsmedlet: "${row.name}". Anta vanligast förekommande beredning/tillagningssätt om inget annat anges. Svara ENDAST med ett JSON-objekt, inga förklaringar, ingen markdown, inga kodstaket. Format exakt: {"kcalPer100": number, "proteinPer100": number, "fatPer100": number, "carbsPer100": number}`
-      }]
+      messages: [{ role: "user", content: prompt }]
     });
     const textBlock = (data.content || []).find(b => b.type === 'text');
     if(!textBlock) throw new Error('Tomt svar från modellen');
@@ -897,9 +987,16 @@ async function estimateIngredient(idx){
     setVal('ing-fat', row.fatPer100);
     setVal('ing-carbs', row.carbsPer100);
     updateMealTotalsDOM();
+    if(statusEl){
+      statusEl.style.color = 'var(--muted)';
+      statusEl.textContent = perPiece && parsed.antagenVikt ? 'Antagande: ' + parsed.antagenVikt : '';
+    }
   } catch(e){
     console.error('Estimation failed', e);
-    if(statusEl) statusEl.textContent = 'Fel: ' + (e && e.message ? e.message : 'okänt fel') + '. Fyll i manuellt.';
+    if(statusEl){
+      statusEl.style.color = 'var(--rust)';
+      statusEl.textContent = 'Fel: ' + (e && e.message ? e.message : 'okänt fel') + '. Fyll i manuellt.';
+    }
   } finally {
     if(btn){ btn.disabled = false; btn.textContent = '✨ Uppskatta'; }
   }
