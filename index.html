@@ -1275,13 +1275,16 @@ function goalSuggestion(){
   const w = currentWeightKg();
   const bmr = calcBMR(w, s.height, s.age, s.sex);
   if(!bmr) return null;
-  const tdee = Math.round(bmr * (Number(s.activity)||1.3));
+  const act = Number(s.activity) || 1.3;
+  const tdee = Math.round(bmr * act);
   const deficit = Number(s.deficit)||0;
   const target = tdee - deficit;
+  const baselineMode = act <= 1.0;  // klockan/loggad träning står för allt aktivt
   return {
-    weight: w, bmr, tdee, deficit, target,
+    weight: w, bmr, tdee, deficit, target, act, baselineMode,
     kgPerWeek: (deficit * 7 / 7700),
-    tooLow: target < 1500
+    // Vid baslinjeläge är målet inte vad du äter — träning läggs på ovanpå.
+    tooLow: baselineMode ? (target < 1200) : (target < 1500)
   };
 }
 
@@ -1517,15 +1520,29 @@ function calcResultHTML(){
   return `
     <div class="compare" style="margin-top:6px;">
       <div class="calcline"><span>Vilometabolism (BMR)</span><b>${r.bmr} kcal</b></div>
-      <div class="calcline"><span>× daglig aktivitet ${Number(state.settings.activity)}</span><b>${r.tdee} kcal</b></div>
+      ${r.baselineMode
+        ? ''
+        : `<div class="calcline"><span>× daglig aktivitet ${r.act}</span><b>${r.tdee} kcal</b></div>`}
       <div class="calcline"><span>− underskott</span><b>−${r.deficit} kcal</b></div>
-      <div class="calcline total"><span>Föreslaget mål</span><b>${r.target} kcal</b></div>
+      <div class="calcline total"><span>${r.baselineMode ? 'Baslinjemål' : 'Föreslaget mål'}</span><b>${r.target} kcal</b></div>
       <div class="cmp-note">
         Baserat på ${r.weight} kg, ${state.settings.height} cm, ${state.settings.age} år (Mifflin-St Jeor).
         Motsvarar ca ${r.kgPerWeek.toFixed(2).replace('.',',')} kg/vecka.
-        Träning du loggar dras av separat och ingår därför inte i aktivitetsfaktorn.
       </div>
-      ${r.tooLow ? `<div class="cmp-note" style="color:var(--rust);">Obs: under 1500 kcal blir det svårt att få i sig tillräckligt med protein och näring. Överväg ett mindre underskott.</div>` : ''}
+      ${r.baselineMode
+        ? `<div class="cmp-note" style="color:var(--sage);">
+             Baslinjeläge: målet utgår bara från vilometabolismen. Det förutsätter att du loggar
+             <b>all</b> rörelse — inte bara träningspass — eftersom vardagsaktiviteten annars saknas.
+             En dag med 600 aktiva kcal ger dig alltså ${r.target + 600} kcal att äta.
+           </div>`
+        : `<div class="cmp-note">
+             Träning du loggar dras av separat och ingår därför inte i aktivitetsfaktorn.
+           </div>`}
+      ${r.tooLow
+        ? `<div class="cmp-note" style="color:var(--rust);">${r.baselineMode
+            ? 'Obs: baslinjen är låg även för en helt stillasittande dag. Överväg ett mindre underskott.'
+            : 'Obs: under 1500 kcal blir det svårt att få i sig tillräckligt med protein och näring. Överväg ett mindre underskott.'}</div>`
+        : ''}
       <button class="addbtn" id="applyGoal" style="border-style:solid; margin-top:10px; margin-bottom:0; ${applied
         ? 'color:var(--sage); background:var(--sage-light); border-color:var(--sage-light);'
         : 'color:#fff; background:var(--sage); border-color:var(--sage);'}" ${applied?'disabled':''}>
@@ -1573,6 +1590,7 @@ function renderSettings(content){
       <div class="settingsrow">
         <label>Daglig aktivitet <em style="font-weight:400; text-transform:none; letter-spacing:0;">— exklusive träning du loggar</em></label>
         <select id="cActivity">
+          <option value="1.0" ${Number(state.settings.activity)===1.0?'selected':''}>Endast BMR — jag loggar all rörelse (t.ex. Apple Watch)</option>
           <option value="1.2" ${Number(state.settings.activity)===1.2?'selected':''}>Stillasittande (kontorsarbete)</option>
           <option value="1.3" ${Number(state.settings.activity)===1.3?'selected':''}>Lätt aktiv (mest sittande, en del rörelse)</option>
           <option value="1.45" ${Number(state.settings.activity)===1.45?'selected':''}>På fötter större delen av dagen</option>
