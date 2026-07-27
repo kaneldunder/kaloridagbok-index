@@ -208,6 +208,16 @@
   .compare .k{font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
   .compare .v{font-size:19px; font-weight:600; margin-top:2px;}
   .cmp-note{font-size:11.5px; color:var(--muted); line-height:1.45; margin-top:8px;}
+  .calcline{display:flex; justify-content:space-between; align-items:baseline;
+    font-size:13px; padding:5px 0; color:var(--muted);}
+  .calcline b{color:var(--ink); font-size:14px;}
+  .calcline.total{border-top:1px solid var(--line); margin-top:4px; padding-top:8px; color:var(--ink); font-weight:600;}
+  .calcline.total b{font-size:18px; color:var(--sage);}
+  .settingsrow select{width:100%; border:1px solid var(--line); border-radius:9px;
+    padding:10px; font-size:14px; background:#fff; font-family:inherit; color:var(--ink);}
+  .sex-btn{flex:1; border:1px solid var(--line); background:#fff; border-radius:7px;
+    padding:8px; font-size:12.5px; font-weight:600; color:var(--muted); cursor:pointer;}
+  .sex-btn.active{background:var(--sage); color:#fff; border-color:var(--sage);}
 
   /* Weight */
   .weightgraph{width:100%; height:120px;}
@@ -239,7 +249,8 @@ window.onerror = function(msg, src, line, col, err){
 };
 
 let state = {
-  settings: { dailyGoal: 2200, startWeight: 100, targetWeight: 90 },
+  settings: { dailyGoal: 2200, startWeight: 100, targetWeight: 90,
+              height: null, age: null, sex: 'man', activity: 1.3, deficit: 500 },
   weights: [],
   favorites: [],
   pantry: [],
@@ -1249,6 +1260,31 @@ function comparisonBlock(st, actualKg, periodWord){
     </div>`;
 }
 
+/* ---- Energibehov (Mifflin-St Jeor) ---- */
+function currentWeightKg(){
+  const ws = state.weights.slice().sort((a,b)=>a.date.localeCompare(b.date));
+  return ws.length ? ws[ws.length-1].kg : state.settings.startWeight;
+}
+function calcBMR(weight, height, age, sex){
+  if(!weight || !height || !age) return null;
+  const base = 10*weight + 6.25*height - 5*age;
+  return Math.round(sex === 'kvinna' ? base - 161 : base + 5);
+}
+function goalSuggestion(){
+  const s = state.settings;
+  const w = currentWeightKg();
+  const bmr = calcBMR(w, s.height, s.age, s.sex);
+  if(!bmr) return null;
+  const tdee = Math.round(bmr * (Number(s.activity)||1.3));
+  const deficit = Number(s.deficit)||0;
+  const target = tdee - deficit;
+  return {
+    weight: w, bmr, tdee, deficit, target,
+    kgPerWeek: (deficit * 7 / 7700),
+    tooLow: target < 1500
+  };
+}
+
 /* Statistik för en period. 7700 kcal ≈ 1 kg kroppsfett. */
 function periodStats(results, goal){
   const logged = results.filter(r => r.totals.intake > 0);
@@ -1474,6 +1510,34 @@ function weightSvg(weights){
 }
 
 /* ---------- SETTINGS ---------- */
+function calcResultHTML(){
+  const r = goalSuggestion();
+  if(!r) return `<div class="cmp-note">Fyll i längd och ålder för att se en uträkning.</div>`;
+  const applied = Number(state.settings.dailyGoal) === r.target;
+  return `
+    <div class="compare" style="margin-top:6px;">
+      <div class="calcline"><span>Vilometabolism (BMR)</span><b>${r.bmr} kcal</b></div>
+      <div class="calcline"><span>× daglig aktivitet ${Number(state.settings.activity)}</span><b>${r.tdee} kcal</b></div>
+      <div class="calcline"><span>− underskott</span><b>−${r.deficit} kcal</b></div>
+      <div class="calcline total"><span>Föreslaget mål</span><b>${r.target} kcal</b></div>
+      <div class="cmp-note">
+        Baserat på ${r.weight} kg, ${state.settings.height} cm, ${state.settings.age} år (Mifflin-St Jeor).
+        Motsvarar ca ${r.kgPerWeek.toFixed(2).replace('.',',')} kg/vecka.
+        Träning du loggar dras av separat och ingår därför inte i aktivitetsfaktorn.
+      </div>
+      ${r.tooLow ? `<div class="cmp-note" style="color:var(--rust);">Obs: under 1500 kcal blir det svårt att få i sig tillräckligt med protein och näring. Överväg ett mindre underskott.</div>` : ''}
+      <button class="addbtn" id="applyGoal" style="border-style:solid; margin-top:10px; margin-bottom:0; ${applied
+        ? 'color:var(--sage); background:var(--sage-light); border-color:var(--sage-light);'
+        : 'color:#fff; background:var(--sage); border-color:var(--sage);'}" ${applied?'disabled':''}>
+        ${applied ? '✓ Detta är ditt nuvarande mål' : 'Använd ' + r.target + ' kcal som mål'}
+      </button>
+      <div class="cmp-note" style="margin-top:8px;">
+        Formeln har en spridning på ungefär ±10 %. Efter några veckor säger jämförelsen mellan
+        loggat underskott och faktisk viktförändring i vecko- och månadsvyn mer än uträkningen.
+      </div>
+    </div>`;
+}
+
 function renderSettings(content){
   const gh = state.gh;
   content.innerHTML = `
@@ -1491,6 +1555,39 @@ function renderSettings(content){
         <input id="sTarget" type="number" step="0.1" value="${state.settings.targetWeight}">
       </div>
       <button class="addbtn" id="sSave" style="border-style:solid; color:#fff; background:var(--ink); border-color:var(--ink);">Spara inställningar</button>
+    </div>
+
+    <div class="sectitle">Räkna ut ditt mål</div>
+    <div class="card">
+      <div class="fieldgrid">
+        <div><label>Längd (cm)</label><input id="cHeight" type="number" value="${state.settings.height || ''}" placeholder="180"></div>
+        <div><label>Ålder</label><input id="cAge" type="number" value="${state.settings.age || ''}" placeholder="40"></div>
+      </div>
+      <div class="settingsrow" style="margin-top:8px;">
+        <label>Kön (för formeln)</label>
+        <div class="unitswitch">
+          <button class="sex-btn ${state.settings.sex!=='kvinna'?'active':''}" data-sex="man">Man</button>
+          <button class="sex-btn ${state.settings.sex==='kvinna'?'active':''}" data-sex="kvinna">Kvinna</button>
+        </div>
+      </div>
+      <div class="settingsrow">
+        <label>Daglig aktivitet <em style="font-weight:400; text-transform:none; letter-spacing:0;">— exklusive träning du loggar</em></label>
+        <select id="cActivity">
+          <option value="1.2" ${Number(state.settings.activity)===1.2?'selected':''}>Stillasittande (kontorsarbete)</option>
+          <option value="1.3" ${Number(state.settings.activity)===1.3?'selected':''}>Lätt aktiv (mest sittande, en del rörelse)</option>
+          <option value="1.45" ${Number(state.settings.activity)===1.45?'selected':''}>På fötter större delen av dagen</option>
+          <option value="1.6" ${Number(state.settings.activity)===1.6?'selected':''}>Fysiskt arbete</option>
+        </select>
+      </div>
+      <div class="settingsrow">
+        <label>Önskad viktnedgång</label>
+        <select id="cDeficit">
+          <option value="275" ${Number(state.settings.deficit)===275?'selected':''}>Lugnt — ca 0,25 kg/vecka</option>
+          <option value="550" ${Number(state.settings.deficit)===550?'selected':''}>Måttligt — ca 0,5 kg/vecka</option>
+          <option value="825" ${Number(state.settings.deficit)===825?'selected':''}>Snabbt — ca 0,75 kg/vecka</option>
+        </select>
+      </div>
+      <div id="calcResult"></div>
     </div>
 
     <div class="sectitle">Mitt livsmedelsbibliotek</div>
@@ -1550,9 +1647,44 @@ function renderSettings(content){
     state.settings.dailyGoal = Number(document.getElementById('sGoal').value) || state.settings.dailyGoal;
     state.settings.startWeight = Number(document.getElementById('sStart').value) || state.settings.startWeight;
     state.settings.targetWeight = Number(document.getElementById('sTarget').value) || state.settings.targetWeight;
+    const hv = document.getElementById('cHeight'); if(hv) state.settings.height = Number(hv.value)||null;
+    const av = document.getElementById('cAge'); if(av) state.settings.age = Number(av.value)||null;
     await ghSaveBundle();
     renderContent();
   };
+
+  const wireCalc = () => {
+    content.querySelectorAll('.sex-btn').forEach(b => {
+      b.onclick = async () => {
+        state.settings.sex = b.dataset.sex;
+        await ghSaveBundle();
+        renderContent();
+      };
+    });
+    const applyBtn = document.getElementById('applyGoal');
+    if(applyBtn) applyBtn.onclick = async () => {
+      const r = goalSuggestion();
+      if(!r) return;
+      state.settings.dailyGoal = r.target;
+      await ghSaveBundle();
+      renderContent();
+    };
+  };
+  const refreshCalc = () => {
+    const el = document.getElementById('calcResult');
+    if(el) el.innerHTML = calcResultHTML();
+    wireCalc();
+  };
+  const onCalcInput = (key, val) => { state.settings[key] = val; refreshCalc(); };
+  const hEl = document.getElementById('cHeight');
+  if(hEl) hEl.oninput = () => onCalcInput('height', Number(hEl.value)||null);
+  const aEl = document.getElementById('cAge');
+  if(aEl) aEl.oninput = () => onCalcInput('age', Number(aEl.value)||null);
+  const actEl = document.getElementById('cActivity');
+  if(actEl) actEl.onchange = () => onCalcInput('activity', Number(actEl.value));
+  const defEl = document.getElementById('cDeficit');
+  if(defEl) defEl.onchange = () => onCalcInput('deficit', Number(defEl.value));
+  refreshCalc();
 
   content.querySelectorAll('.delpantry').forEach(btn => {
     btn.onclick = async () => {
