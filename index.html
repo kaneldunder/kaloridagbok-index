@@ -143,6 +143,10 @@
     padding:7px; font-size:12.5px; font-weight:600; color:var(--muted); cursor:pointer;
   }
   .modeswitch button.active{background:var(--ink); color:#fff; border-color:var(--ink);}
+  .editbanner{
+    background:#FBF6EA; border:1px solid var(--gold); color:#8A6D2A;
+    border-radius:9px; padding:8px 10px; font-size:12.5px; margin-bottom:10px;
+  }
 
   .ingcard{background:#fff; border:1px solid var(--line); border-radius:11px; padding:10px; margin-bottom:8px;}
   .ingcard .toprow{display:flex; gap:8px; align-items:center; margin-bottom:8px;}
@@ -245,6 +249,7 @@ let state = {
   openForm: null,
   foodFormMode: 'quick',
   mealBuilder: [],
+  editingFav: null,
   lastSync: null,
   gh: { owner: '', repo: '', token: '', path: 'kaloridagbok-data.json', branch: 'main', sha: null },
   aiKey: '',
@@ -612,6 +617,7 @@ async function renderDay(content){
   const addFoodBtn = document.getElementById('addFood');
   if(addFoodBtn) addFoodBtn.onclick = () => {
     state.openForm = 'food';
+    state.editingFav = null;
     state.foodFormMode = 'quick';
     state.mealBuilder = [emptyIngredient()];
     renderContent();
@@ -634,6 +640,28 @@ async function renderDay(content){
     };
   });
 
+  content.querySelectorAll('.editfav').forEach(btn => {
+    btn.onclick = () => {
+      const idx = Number(btn.dataset.idx);
+      const fav = state.favorites[idx];
+      if(!fav) return;
+      state.editingFav = idx;
+      state.openForm = 'food';
+      if(fav.components && fav.components.length){
+        state.foodFormMode = 'build';
+        // djupkopia så avbryt inte förstör originalet
+        state.mealBuilder = fav.components.map(c => ({
+          name: c.name || '', unit: c.unit || 'g', amount: c.amount,
+          kcalPer100: c.kcalPer100, proteinPer100: c.proteinPer100,
+          fatPer100: c.fatPer100, carbsPer100: c.carbsPer100
+        }));
+      } else {
+        state.foodFormMode = 'quick';
+      }
+      renderContent();
+    };
+  });
+
   content.querySelectorAll('.delfav').forEach(btn => {
     btn.onclick = async () => {
       state.favorites.splice(Number(btn.dataset.idx), 1);
@@ -643,7 +671,13 @@ async function renderDay(content){
   });
 
   const cancelBtn = document.getElementById('cancelForm');
-  if(cancelBtn) cancelBtn.onclick = () => { state.openForm = null; renderContent(); };
+  if(cancelBtn) cancelBtn.onclick = () => {
+    const wasEditing = state.editingFav !== null;
+    state.editingFav = null;
+    state.mealBuilder = [];
+    state.openForm = wasEditing ? 'favorites' : null;
+    renderContent();
+  };
 
   const saveFoodBtn = document.getElementById('saveFood');
   if(saveFoodBtn) saveFoodBtn.onclick = async () => {
@@ -653,9 +687,18 @@ async function renderDay(content){
     const fat = Number(document.getElementById('fFat').value) || 0;
     const carbs = Number(document.getElementById('fCarbs').value) || 0;
     if(!name || !kcal) return;
+    if(state.editingFav !== null){
+      state.favorites[state.editingFav] = { name, kcal, protein, fat, carbs };
+      state.editingFav = null;
+      await ghSaveBundle();
+      state.openForm = 'favorites';
+      renderContent();
+      return;
+    }
     data.food.push({ name, kcal, protein, fat, carbs });
     await saveDay(dateStr, data);
-    if(document.getElementById('fSaveFav').checked){
+    const favCb = document.getElementById('fSaveFav');
+    if(favCb && favCb.checked){
       state.favorites = state.favorites.filter(f => f.name !== name);
       state.favorites.push({ name, kcal, protein, fat, carbs });
       await ghSaveBundle();
@@ -774,9 +817,19 @@ async function renderDay(content){
       carbs: Math.round(t.carbs),
       components
     };
+    if(state.editingFav !== null){
+      state.favorites[state.editingFav] = { ...entry };
+      state.editingFav = null;
+      state.mealBuilder = [];
+      await ghSaveBundle();
+      state.openForm = 'favorites';
+      renderContent();
+      return;
+    }
     data.food.push(entry);
     await saveDay(dateStr, data);
-    if(document.getElementById('buildSaveFav').checked){
+    const favCb2 = document.getElementById('buildSaveFav');
+    if(favCb2 && favCb2.checked){
       state.favorites = state.favorites.filter(f => f.name !== name);
       state.favorites.push({ ...entry });
       await ghSaveBundle();
@@ -797,9 +850,10 @@ async function renderDay(content){
     renderContent();
   };
 
-  content.querySelectorAll('.entry .del').forEach(btn=>{
+  content.querySelectorAll('.entry .del:not(.addfav):not(.delfav):not(.editfav)').forEach(btn=>{
     btn.onclick = async () => {
       const type = btn.dataset.type, idx = Number(btn.dataset.idx);
+      if(!type) return;
       data[type].splice(idx,1);
       await saveDay(dateStr, data);
       renderContent();
@@ -850,10 +904,13 @@ function favoritesPanel(){
       <div class="entry food" style="margin-bottom:8px;">
         <div>
           <div class="name">${f.name}</div>
-          <div class="sub">${f.components && f.components.length ? f.components.length + ' delar' : `P ${f.protein||0}g · F ${f.fat||0}g · K ${f.carbs||0}g`}</div>
+          <div class="sub">${f.components && f.components.length
+            ? f.components.map(c=>c.unit==='st' ? `${Number(c.amount)||0} st ${c.name}` : `${c.name} ${Number(c.amount)||0}g`).join(', ')
+            : `P ${f.protein||0}g · F ${f.fat||0}g · K ${f.carbs||0}g`}</div>
         </div>
         <div class="right">
           <div class="kcal">${f.kcal} kcal</div>
+          <button class="del editfav" data-idx="${i}" title="Redigera favorit">✎</button>
           <button class="del addfav" data-idx="${i}" title="Lägg till idag">＋</button>
           <button class="del delfav" data-idx="${i}" title="Ta bort favorit">×</button>
         </div>
@@ -864,34 +921,40 @@ function favoritesPanel(){
 }
 
 function foodForm(){
+  const editing = state.editingFav !== null;
+  const favName = editing && state.favorites[state.editingFav] ? state.favorites[state.editingFav].name : '';
   return `<div class="form">
-    <div class="modeswitch">
-      <button id="modeQuick" class="${state.foodFormMode==='quick'?'active':''}">Snabb</button>
-      <button id="modeBuild" class="${state.foodFormMode==='build'?'active':''}">Bygg av flera delar</button>
-    </div>
+    ${editing
+      ? `<div class="editbanner">✎ Redigerar favorit: <b>${favName}</b></div>`
+      : `<div class="modeswitch">
+          <button id="modeQuick" class="${state.foodFormMode==='quick'?'active':''}">Snabb</button>
+          <button id="modeBuild" class="${state.foodFormMode==='build'?'active':''}">Bygg av flera delar</button>
+        </div>`}
     ${state.foodFormMode === 'quick' ? quickFoodForm() : buildMealForm()}
   </div>`;
 }
 
 function quickFoodForm(){
+  const ed = state.editingFav !== null ? state.favorites[state.editingFav] : null;
+  const v = (k) => ed && ed[k] !== undefined ? ed[k] : '';
   return `
-    <div class="row"><input id="fName" placeholder="T.ex. 2 ägg och en banan"></div>
+    <div class="row"><input id="fName" placeholder="T.ex. 2 ägg och en banan" value="${ed ? ed.name : ''}"></div>
     <button class="estbtn" id="quickEstBtn" style="width:100%; margin-bottom:8px;">✨ Uppskatta hela måltiden</button>
     <div class="est-status" id="quickEstStatus"></div>
     <div class="fieldgrid">
-      <div><label>Kcal</label><input id="fKcal" type="number" placeholder="0"></div>
-      <div><label>Protein (g)</label><input id="fProtein" type="number" placeholder="0"></div>
+      <div><label>Kcal</label><input id="fKcal" type="number" placeholder="0" value="${v('kcal')}"></div>
+      <div><label>Protein (g)</label><input id="fProtein" type="number" placeholder="0" value="${v('protein')}"></div>
     </div>
     <div class="fieldgrid">
-      <div><label>Fett (g)</label><input id="fFat" type="number" placeholder="0"></div>
-      <div><label>Kolhydrater (g)</label><input id="fCarbs" type="number" placeholder="0"></div>
+      <div><label>Fett (g)</label><input id="fFat" type="number" placeholder="0" value="${v('fat')}"></div>
+      <div><label>Kolhydrater (g)</label><input id="fCarbs" type="number" placeholder="0" value="${v('carbs')}"></div>
     </div>
-    <label style="display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted); margin:10px 0;">
+    ${ed ? '' : `<label style="display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted); margin:10px 0;">
       <input type="checkbox" id="fSaveFav" style="width:auto;"> Spara som favorit
-    </label>
+    </label>`}
     <div class="actions">
       <button class="cancel" id="cancelForm">Avbryt</button>
-      <button class="save" id="saveFood">Spara</button>
+      <button class="save" id="saveFood">${ed ? 'Spara ändringar' : 'Spara'}</button>
     </div>
   `;
 }
@@ -945,7 +1008,7 @@ function buildMealForm(){
   const t = computeMealTotals();
   return `
     ${pantryDatalist()}
-    <div class="row"><input id="buildMealName" placeholder="Namn på måltiden (valfritt)"></div>
+    <div class="row"><input id="buildMealName" placeholder="Namn på måltiden (valfritt)" value="${state.editingFav !== null && state.favorites[state.editingFav] ? state.favorites[state.editingFav].name : ''}"></div>
     ${state.mealBuilder.map((row,i)=>ingredientRow(row,i)).join('')}
     <button class="addingbtn" id="addIngredient">+ Lägg till livsmedel</button>
     <div class="mealtotals">
@@ -954,12 +1017,12 @@ function buildMealForm(){
       <div class="tot"><span>Fett</span><b id="buildTotFat">${Math.round(t.fat)}g</b></div>
       <div class="tot"><span>Kolh.</span><b id="buildTotCarbs">${Math.round(t.carbs)}g</b></div>
     </div>
-    <label style="display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted); margin-bottom:10px;">
+    ${state.editingFav !== null ? '' : `<label style="display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted); margin-bottom:10px;">
       <input type="checkbox" id="buildSaveFav" style="width:auto;"> Spara som favorit
-    </label>
+    </label>`}
     <div class="actions">
       <button class="cancel" id="cancelForm">Avbryt</button>
-      <button class="save" id="saveMeal">Spara måltid</button>
+      <button class="save" id="saveMeal">${state.editingFav !== null ? 'Spara ändringar' : 'Spara måltid'}</button>
     </div>
   `;
 }
