@@ -370,6 +370,15 @@ function updateMealTotalsDOM(){
   state.mealBuilder.forEach((row, i) => {
     const subEl = document.getElementById('ingSub_' + i);
     if(subEl) subEl.textContent = '≈ ' + ingredientSubKcal(row) + ' kcal';
+    const pb = document.getElementById('pantryBtn_' + i);
+    if(pb){
+      const canSave = row.name && row.name.trim() && Number(row.kcalPer100) > 0;
+      const saved = pantryHasExact(row);
+      pb.style.visibility = canSave ? 'visible' : 'hidden';
+      pb.disabled = saved;
+      pb.classList.toggle('saved', saved);
+      pb.textContent = saved ? '✓ I mitt bibliotek' : '💾 Spara livsmedel';
+    }
   });
 }
 
@@ -1072,7 +1081,7 @@ function ingredientRow(row, idx){
       <div></div>
     </div>
     <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:4px;">
-      ${canSave ? `<button class="pantrybtn ${saved?'saved':''}" data-idx="${idx}" ${saved?'disabled':''}>${saved?'✓ I mitt bibliotek':'💾 Spara livsmedel'}</button>` : '<span></span>'}
+      <button class="pantrybtn" id="pantryBtn_${idx}" data-idx="${idx}" ${canSave?'':'style="visibility:hidden;"'}>${saved?'✓ I mitt bibliotek':'💾 Spara livsmedel'}</button>
       <div class="sub" id="ingSub_${idx}">≈ ${ingredientSubKcal(row)} kcal</div>
     </div>
   </div>`;
