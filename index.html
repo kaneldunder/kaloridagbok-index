@@ -147,6 +147,14 @@
     background:#FBF6EA; border:1px solid var(--gold); color:#8A6D2A;
     border-radius:9px; padding:8px 10px; font-size:12.5px; margin-bottom:10px;
   }
+  .daytype{
+    display:flex; align-items:center; justify-content:space-between; width:100%;
+    background:#fff; border:1px solid var(--line); border-radius:11px;
+    padding:11px 12px; margin-bottom:7px; cursor:pointer; font-family:inherit; text-align:left;
+  }
+  .daytype b{display:block; font-size:14px; color:var(--ink); font-weight:600;}
+  .daytype small{display:block; font-size:11.5px; color:var(--muted); margin-top:1px;}
+  .daytype .dtk{font-size:14px; font-weight:600; color:var(--sage); white-space:nowrap;}
 
   .ingcard{background:#fff; border:1px solid var(--line); border-radius:11px; padding:10px; margin-bottom:8px;}
   .ingcard .toprow{display:flex; gap:8px; align-items:center; margin-bottom:8px;}
@@ -626,8 +634,13 @@ async function renderDay(content){
     `}
     ${data.food.length ? data.food.map((f,i)=>entryRow(f,i,'food')).join('') : `<div class="empty">Inga måltider loggade</div>`}
 
-    <div class="sectitle">Träning</div>
-    ${state.openForm === 'exercise' ? exerciseForm() : `<button class="addbtn exercise" id="addExercise">+ Lägg till träning</button>`}
+    <div class="sectitle">Träning & aktivitet</div>
+    ${state.openForm === 'exercise' ? exerciseForm()
+      : state.openForm === 'dayEstimate' ? dayEstimatePanel()
+      : `<div style="display:flex; gap:8px;">
+          <button class="addbtn exercise" id="addExercise" style="flex:1;">+ Lägg till träning</button>
+          ${inBaselineMode() ? `<button class="addbtn" id="estimateDay" style="flex:1; border-color:var(--gold); color:#8A6D2A;">≈ Uppskatta dagen</button>` : ''}
+        </div>`}
     ${data.exercise.length ? data.exercise.map((e,i)=>entryRow(e,i,'exercise')).join('') : `<div class="empty">Ingen träning loggad</div>`}
   `;
 
@@ -644,6 +657,22 @@ async function renderDay(content){
   };
   const addExBtn = document.getElementById('addExercise');
   if(addExBtn) addExBtn.onclick = () => { state.openForm = 'exercise'; renderContent(); };
+
+  const estDayBtn = document.getElementById('estimateDay');
+  if(estDayBtn) estDayBtn.onclick = () => { state.openForm = 'dayEstimate'; renderContent(); };
+
+  content.querySelectorAll('.daytype').forEach(btn => {
+    btn.onclick = async () => {
+      const kcal = Number(btn.dataset.kcal) || 0;
+      if(!kcal) return;
+      // Ersätt ev. tidigare uppskattning samma dag
+      data.exercise = data.exercise.filter(e => !e.estimated);
+      data.exercise.push({ name: 'Vardagsaktivitet (' + btn.dataset.label.toLowerCase() + ')', kcal, estimated: true });
+      await saveDay(dateStr, data);
+      state.openForm = null;
+      renderContent();
+    };
+  });
 
   const showFavBtn = document.getElementById('showFavorites');
   if(showFavBtn) showFavBtn.onclick = () => { state.openForm = 'favorites'; renderContent(); };
@@ -1226,6 +1255,32 @@ async function scanLabel(idx, file){
   }
 }
 
+function dayEstimatePanel(){
+  const bmr = calcBMR(currentWeightKg(), state.settings.height, state.settings.age, state.settings.sex);
+  if(!bmr){
+    return `<div class="form">
+      <div class="empty" style="text-align:left; padding:4px 0 10px;">
+        Fyll i längd och ålder under Inställningar först, så kan aktiviteten uppskattas.
+      </div>
+      <div class="actions"><button class="cancel" id="cancelForm">Tillbaka</button></div>
+    </div>`;
+  }
+  return `<div class="form">
+    <div class="cmp-note" style="margin:0 0 10px;">
+      För dagar utan klocka. Uppskattar rörelse utöver vila med samma modell som ditt mål.
+      Lägg till träningspass separat ovanpå.
+    </div>
+    ${DAY_TYPES.map(t => {
+      const kcal = estimatedActivityKcal(t.factor);
+      return `<button class="daytype" data-key="${t.key}" data-kcal="${kcal}" data-label="${t.label}">
+        <span><b>${t.label}</b><small>${t.hint}</small></span>
+        <span class="dtk">${kcal} kcal</span>
+      </button>`;
+    }).join('')}
+    <div class="actions" style="margin-top:10px;"><button class="cancel" id="cancelForm">Avbryt</button></div>
+  </div>`;
+}
+
 function exerciseForm(){
   return `<div class="form">
     <div class="row"><input id="eName" placeholder="Namn, t.ex. Löpning 5 km"></div>
@@ -1295,6 +1350,23 @@ function goalSuggestion(){
     // Vid baslinjeläge är målet inte vad du äter — träning läggs på ovanpå.
     tooLow: baselineMode ? (target < 1200) : (target < 1500)
   };
+}
+
+/* Uppskattad vardagsaktivitet när klockan inte används.
+   Bygger på samma faktorer som målberäkningen: aktiv del = BMR × (faktor − 1). */
+const DAY_TYPES = [
+  { key:'lugn',   label:'Lugn dag',    hint:'mest stillasittande',            factor:1.2  },
+  { key:'vanlig', label:'Vanlig dag',  hint:'en del rörelse',                 factor:1.3  },
+  { key:'rorlig', label:'Rörlig dag',  hint:'på fötter större delen av dagen',factor:1.45 },
+  { key:'tung',   label:'Tung dag',    hint:'fysiskt krävande',               factor:1.6  }
+];
+function estimatedActivityKcal(factor){
+  const bmr = calcBMR(currentWeightKg(), state.settings.height, state.settings.age, state.settings.sex);
+  if(!bmr) return null;
+  return Math.round(bmr * (factor - 1));
+}
+function inBaselineMode(){
+  return Number(state.settings.activity) <= 1.0;
 }
 
 /* Statistik för en period. 7700 kcal ≈ 1 kg kroppsfett. */
