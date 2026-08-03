@@ -111,6 +111,33 @@
     width:24px; height:24px; line-height:1;
   }
   .entry .addfav{color:var(--sage); font-size:19px; font-weight:700;}
+  .etime{
+    display:inline-block; font-size:11px; font-weight:600; color:var(--muted);
+    background:var(--paper); border-radius:5px; padding:1px 5px; margin-right:6px;
+    vertical-align:1px;
+  }
+  .qtypick{display:flex; align-items:center; gap:2px; background:var(--paper); border-radius:14px; padding:2px;}
+  .qtybtn{
+    border:none; background:#fff; color:var(--ink); width:22px; height:22px;
+    border-radius:50%; font-size:14px; line-height:1; cursor:pointer; font-family:inherit;
+  }
+  .qtyval{font-size:12px; font-weight:600; min-width:22px; text-align:center;}
+  .entry.confirmdel{border-color:var(--rust); background:var(--rust-light);}
+  .confirmbtn{
+    border:none; border-radius:7px; padding:6px 10px; font-size:11.5px;
+    font-weight:600; cursor:pointer; font-family:inherit; white-space:nowrap;
+  }
+  .confirmbtn.no{background:#fff; color:var(--muted);}
+  .confirmbtn.yes{background:var(--rust); color:#fff;}
+  .confirmbtn.save{background:var(--ink); color:#fff;}
+  button.etime{border:1px solid transparent; cursor:pointer; font-family:inherit;}
+  button.etime:hover{border-color:var(--line);}
+  button.etime.notime{color:var(--line);}
+  .entry.timeedit{border-color:var(--ink); align-items:flex-end;}
+  .entry.timeedit input[type="time"]{
+    border:1px solid var(--line); border-radius:8px; padding:7px 9px;
+    font-size:15px; font-family:inherit; background:#fff; color:var(--ink);
+  }
   .empty{color:var(--muted); font-size:13px; text-align:center; padding:18px 0;}
 
   .addbtn{
@@ -289,6 +316,9 @@ let state = {
   foodFormMode: 'quick',
   mealBuilder: [],
   editingFav: null,
+  confirmDelFav: null,
+  favQty: {},
+  editingTime: null,
   lastSync: null,
   gh: { owner: '', repo: '', token: '', path: 'kaloridagbok-data.json', branch: 'main', sha: null },
   aiKey: '',
@@ -417,6 +447,14 @@ function ymd(d){
   return `${y}-${m}-${day}`;
 }
 function todayYmd(){ return ymd(new Date()); }
+function sortByTime(list){
+  list.sort((a,b) => (a.time||'99:99').localeCompare(b.time||'99:99'));
+  return list;
+}
+function nowHM(){
+  const d=new Date();
+  return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+}
 function fmtDateLabel(d){
   const dayNames = ['Söndag','Måndag','Tisdag','Onsdag','Torsdag','Fredag','Lördag'];
   const monthNames = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
@@ -652,7 +690,9 @@ async function renderDay(content){
         <button class="addbtn" id="showFavorites" style="flex:1; border-color:var(--gold); color:#8A6D2A;">⭐ Favoriter</button>
       </div>
     `}
-    ${data.food.length ? data.food.map((f,i)=>entryRow(f,i,'food')).join('') : `<div class="empty">Inga måltider loggade</div>`}
+    ${data.food.length ? data.food.map((f,i)=>
+      (state.editingTime && state.editingTime.type==='food' && state.editingTime.idx===i)
+        ? timeEditRow(f,i,'food') : entryRow(f,i,'food')).join('') : `<div class="empty">Inga måltider loggade</div>`}
 
     <div class="sectitle">Träning & aktivitet</div>
     ${state.openForm === 'exercise' ? exerciseForm()
@@ -661,7 +701,9 @@ async function renderDay(content){
           <button class="addbtn exercise" id="addExercise" style="flex:1;">+ Lägg till träning</button>
           ${inBaselineMode() ? `<button class="addbtn" id="estimateDay" style="flex:1; border-color:var(--gold); color:#8A6D2A;">≈ Uppskatta dagen</button>` : ''}
         </div>`}
-    ${data.exercise.length ? data.exercise.map((e,i)=>entryRow(e,i,'exercise')).join('') : `<div class="empty">Ingen träning loggad</div>`}
+    ${data.exercise.length ? data.exercise.map((e,i)=>
+      (state.editingTime && state.editingTime.type==='exercise' && state.editingTime.idx===i)
+        ? timeEditRow(e,i,'exercise') : entryRow(e,i,'exercise')).join('') : `<div class="empty">Ingen träning loggad</div>`}
   `;
 
   document.getElementById('prevDay').onclick = () => { state.currentDate.setDate(state.currentDate.getDate()-1); renderContent(); };
@@ -716,15 +758,65 @@ async function renderDay(content){
   }
 
   const showFavBtn = document.getElementById('showFavorites');
-  if(showFavBtn) showFavBtn.onclick = () => { state.openForm = 'favorites'; renderContent(); };
+  if(showFavBtn) showFavBtn.onclick = () => { state.openForm = 'favorites'; state.confirmDelFav = null; renderContent(); };
+
+  content.querySelectorAll('.edittime').forEach(btn => {
+    btn.onclick = () => {
+      state.editingTime = { type: btn.dataset.type, idx: Number(btn.dataset.idx) };
+      renderContent();
+    };
+  });
+
+  const cancelTimeBtn = document.getElementById('cancelTime');
+  if(cancelTimeBtn) cancelTimeBtn.onclick = () => { state.editingTime = null; renderContent(); };
+
+  const saveTimeBtn = document.getElementById('saveTime');
+  if(saveTimeBtn) saveTimeBtn.onclick = async () => {
+    const val = document.getElementById('timeInput').value;
+    const type = saveTimeBtn.dataset.type, i = Number(saveTimeBtn.dataset.idx);
+    if(val && data[type] && data[type][i]){
+      data[type][i].time = val;
+      data[type].sort((a,b) => (a.time||'99:99').localeCompare(b.time||'99:99'));
+      await saveDay(dateStr, data);
+    }
+    state.editingTime = null;
+    renderContent();
+  };
+
+  content.querySelectorAll('.qtybtn').forEach(btn => {
+    btn.onclick = () => {
+      const i = Number(btn.dataset.idx);
+      const dir = Number(btn.dataset.dir);
+      const next = Math.max(0.5, Math.min(10, favQty(i) + dir * 0.5));
+      state.favQty[i] = next;
+      const qEl = document.getElementById('favQty_' + i);
+      const kEl = document.getElementById('favKcal_' + i);
+      if(qEl) qEl.textContent = next;
+      if(kEl) kEl.textContent = Math.round(state.favorites[i].kcal * next) + ' kcal';
+    };
+  });
 
   content.querySelectorAll('.addfav').forEach(btn => {
     btn.onclick = async () => {
-      const fav = state.favorites[Number(btn.dataset.idx)];
+      const i = Number(btn.dataset.idx);
+      const fav = state.favorites[i];
       if(!fav) return;
-      const { name, kcal, protein, fat, carbs, components } = fav;
-      data.food.push({ name, kcal, protein, fat, carbs, ...(components ? { components } : {}) });
+      const q = favQty(i);
+      const entry = {
+        name: q === 1 ? fav.name : q + '× ' + fav.name,
+        kcal: Math.round(fav.kcal * q),
+        protein: Math.round((fav.protein||0) * q * 10)/10,
+        fat: Math.round((fav.fat||0) * q * 10)/10,
+        carbs: Math.round((fav.carbs||0) * q * 10)/10,
+        time: nowHM()
+      };
+      if(fav.components && fav.components.length){
+        entry.components = fav.components.map(c => ({...c, amount: (Number(c.amount)||0) * q}));
+      }
+      data.food.push(entry);
+      sortByTime(data.food);
       await saveDay(dateStr, data);
+      state.favQty[i] = 1;
       state.openForm = null;
       renderContent();
     };
@@ -754,16 +846,27 @@ async function renderDay(content){
 
   content.querySelectorAll('.delfav').forEach(btn => {
     btn.onclick = async () => {
-      state.favorites.splice(Number(btn.dataset.idx), 1);
-      await ghSaveBundle();
-      renderContent();
+      const idx = Number(btn.dataset.idx);
+      if(state.confirmDelFav === idx){
+        state.confirmDelFav = null;
+        state.favorites.splice(idx, 1);
+        await ghSaveBundle();
+        renderContent();
+      } else {
+        state.confirmDelFav = idx;
+        renderContent();
+      }
     };
   });
+
+  const cancelDel = document.getElementById('cancelDelFav');
+  if(cancelDel) cancelDel.onclick = () => { state.confirmDelFav = null; renderContent(); };
 
   const cancelBtn = document.getElementById('cancelForm');
   if(cancelBtn) cancelBtn.onclick = () => {
     const wasEditing = state.editingFav !== null;
     state.editingFav = null;
+    state.confirmDelFav = null;
     state.mealBuilder = [];
     state.openForm = wasEditing ? 'favorites' : null;
     renderContent();
@@ -785,7 +888,8 @@ async function renderDay(content){
       renderContent();
       return;
     }
-    data.food.push({ name, kcal, protein, fat, carbs });
+    data.food.push({ name, kcal, protein, fat, carbs, time: nowHM() });
+    sortByTime(data.food);
     await saveDay(dateStr, data);
     const favCb = document.getElementById('fSaveFav');
     if(favCb && favCb.checked){
@@ -905,7 +1009,8 @@ async function renderDay(content){
       protein: Math.round(t.protein),
       fat: Math.round(t.fat),
       carbs: Math.round(t.carbs),
-      components
+      components,
+      time: nowHM()
     };
     if(state.editingFav !== null){
       state.favorites[state.editingFav] = { ...entry };
@@ -917,6 +1022,7 @@ async function renderDay(content){
       return;
     }
     data.food.push(entry);
+    sortByTime(data.food);
     await saveDay(dateStr, data);
     const favCb2 = document.getElementById('buildSaveFav');
     if(favCb2 && favCb2.checked){
@@ -934,7 +1040,8 @@ async function renderDay(content){
     const name = document.getElementById('eName').value.trim();
     const kcal = Number(document.getElementById('eKcal').value) || 0;
     if(!name || !kcal) return;
-    data.exercise.push({ name, kcal });
+    data.exercise.push({ name, kcal, time: nowHM() });
+    sortByTime(data.exercise);
     await saveDay(dateStr, data);
     state.openForm = null;
     renderContent();
@@ -960,6 +1067,19 @@ function macroBar(label, amount, target){
   </div>`;
 }
 
+function timeEditRow(item, idx, type){
+  return `<div class="entry ${type} timeedit">
+    <div style="flex:1;">
+      <div class="sub" style="margin-bottom:5px;">Tid för "${item.name}"</div>
+      <input type="time" id="timeInput" value="${item.time || nowHM()}">
+    </div>
+    <div class="right">
+      <button class="confirmbtn no" id="cancelTime">Avbryt</button>
+      <button class="confirmbtn save" id="saveTime" data-type="${type}" data-idx="${idx}">Spara</button>
+    </div>
+  </div>`;
+}
+
 function entryRow(item, idx, type){
   let sub = '';
   if(type === 'food'){
@@ -972,9 +1092,12 @@ function entryRow(item, idx, type){
       sub = `<div class="sub">P ${item.protein||0}g · F ${item.fat||0}g · K ${item.carbs||0}g</div>`;
     }
   }
+  const time = item.time
+    ? `<button class="etime edittime" data-type="${type}" data-idx="${idx}" title="Ändra tid">${item.time}</button>`
+    : `<button class="etime edittime notime" data-type="${type}" data-idx="${idx}" title="Sätt tid">– –</button>`;
   return `<div class="entry ${type}">
     <div>
-      <div class="name">${item.name}</div>
+      <div class="name">${time}${item.name}</div>
       ${sub}
     </div>
     <div class="right">
@@ -990,8 +1113,20 @@ function favoritesPanel(){
       <div class="actions"><button class="cancel" id="cancelForm">Tillbaka</button></div></div>`;
   }
   return `<div class="form">
-    ${state.favorites.map((f,i)=>`
-      <div class="entry food" style="margin-bottom:8px;">
+    ${state.favorites.map((f,i)=>{
+      if(state.confirmDelFav === i){
+        return `<div class="entry food confirmdel" style="margin-bottom:8px;">
+          <div>
+            <div class="name">Ta bort "${f.name}"?</div>
+            <div class="sub">Favoriten raderas permanent. Redan loggade måltider påverkas inte.</div>
+          </div>
+          <div class="right">
+            <button class="confirmbtn no" id="cancelDelFav">Avbryt</button>
+            <button class="confirmbtn yes delfav" data-idx="${i}">Ta bort</button>
+          </div>
+        </div>`;
+      }
+      return `<div class="entry food" style="margin-bottom:8px;">
         <div>
           <div class="name">${f.name}</div>
           <div class="sub">${f.components && f.components.length
@@ -999,15 +1134,25 @@ function favoritesPanel(){
             : `P ${f.protein||0}g · F ${f.fat||0}g · K ${f.carbs||0}g`}</div>
         </div>
         <div class="right">
-          <div class="kcal">${f.kcal} kcal</div>
+          <div class="qtypick">
+            <button class="qtybtn" data-idx="${i}" data-dir="-1">−</button>
+            <span class="qtyval" id="favQty_${i}">${favQty(i)}</span>
+            <button class="qtybtn" data-idx="${i}" data-dir="1">+</button>
+          </div>
+          <div class="kcal" id="favKcal_${i}">${Math.round(f.kcal * favQty(i))} kcal</div>
           <button class="del editfav" data-idx="${i}" title="Redigera favorit">✎</button>
           <button class="del addfav" data-idx="${i}" title="Lägg till idag">＋</button>
           <button class="del delfav" data-idx="${i}" title="Ta bort favorit">×</button>
         </div>
-      </div>
-    `).join('')}
+      </div>`;
+    }).join('')}
     <div class="actions"><button class="cancel" id="cancelForm">Tillbaka</button></div>
   </div>`;
+}
+
+function favQty(i){
+  const q = state.favQty[i];
+  return q === undefined ? 1 : q;
 }
 
 function foodForm(){
