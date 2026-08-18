@@ -287,6 +287,13 @@
   .copyday b{display:block; font-size:13.5px; color:var(--ink); font-weight:600;}
   .copyday small{display:block; font-size:11.5px; color:var(--muted); margin-top:1px;}
   .copyday .dtk{font-size:14px; font-weight:600; color:var(--rust); white-space:nowrap;}
+  .mealrow{border-top:1px solid var(--line); padding:9px 0 7px;}
+  .mealrow:first-of-type{border-top:none;}
+  .mealrow-top{display:flex; justify-content:space-between; align-items:baseline; gap:8px;}
+  .mealrow-top b{font-size:13.5px;}
+  .mealdiff{font-size:12px; font-weight:600; white-space:nowrap;}
+  .mealrow-sub{font-size:11px; color:var(--muted); margin-top:3px; line-height:1.45;}
+  .mealrow-note{font-size:11px; color:var(--rust); margin-top:3px;}
   .summaryrow{display:flex; gap:8px; margin-top:14px;}
   .summaryrow .stat{flex:1;}
   .compare{margin-top:14px; padding:12px; background:var(--paper); border-radius:12px;}
@@ -355,6 +362,7 @@ let state = {
   confirmDelFav: null,
   favQty: {},
   editingTime: null,
+  mealType: null,
   lastSync: null,
   gh: { owner: '', repo: '', token: '', path: 'kaloridagbok-data.json', branch: 'main', sha: null },
   aiKey: '',
@@ -487,10 +495,57 @@ function sortByTime(list){
   list.sort((a,b) => (a.time||'99:99').localeCompare(b.time||'99:99'));
   return list;
 }
+const MEAL_SLOTS = [
+  { key:'frukost',   label:'Frukost',   time:'07:30', words:['frukost','morgonmål'] },
+  { key:'lunch',     label:'Lunch',     time:'12:00', words:['lunch'] },
+  { key:'mellanmal', label:'Mellanmål', time:'15:00', words:['mellanmål','mellis','fika','snack'] },
+  { key:'middag',    label:'Middag',    time:'18:30', words:['middag','kvällsmat'] },
+  { key:'kvall',     label:'Kvällsmål', time:'21:00', words:['kvällsmål','nattmat','kvällsfika'] }
+];
+function detectSlot(name){
+  const n = (name||'').toLowerCase();
+  // Längsta nyckelordet först så "kvällsmat" inte fångas av "kväll"
+  const all = MEAL_SLOTS.flatMap(s => s.words.map(w => ({ w, s })))
+    .sort((a,b) => b.w.length - a.w.length);
+  const hit = all.find(x => n.includes(x.w));
+  return hit ? hit.s : null;
+}
+/* Föreslår tid utifrån namnet, annars klockan nu. */
+function suggestTime(name){
+  const slot = detectSlot(name);
+  return slot ? slot.time : nowHM();
+}
+
 function nowHM(){
   const d=new Date();
   return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
 }
+
+/* ---- Måltidstyper ----
+   Etiketten är valfri och påverkar inte tidsstämpeln på dagens datum.
+   Föreslagen tid används bara när man loggar en tidigare dag. */
+const MEAL_TYPES = [
+  { key:'frukost',   label:'Frukost',   time:'07:30', match:/^\s*frukost\b|^\s*breakfast\b/i },
+  { key:'lunch',     label:'Lunch',     time:'12:00', match:/^\s*lunch\b/i },
+  { key:'middag',    label:'Middag',    time:'18:00', match:/^\s*(middag|kvällsmat|dinner)\b/i },
+  { key:'mellanmal', label:'Mellanmål', time:'15:00', match:/^\s*(mellanmål|fika)\b/i }
+];
+function mealTypeLabel(key){
+  const m = MEAL_TYPES.find(x => x.key === key);
+  return m ? m.label : null;
+}
+function detectMealType(name){
+  const m = MEAL_TYPES.find(x => x.match.test(name || ''));
+  return m ? m.key : null;
+}
+/* Idag: faktisk tid. Tidigare dag: föreslagen tid för måltidstypen. */
+function timeForEntry(name, mealType){
+  if(ymd(state.currentDate) === todayYmd()) return nowHM();
+  const key = mealType || detectMealType(name);
+  const m = MEAL_TYPES.find(x => x.key === key);
+  return m ? m.time : '12:00';
+}
+
 function fmtDateLabel(d){
   const dayNames = ['Söndag','Måndag','Tisdag','Onsdag','Torsdag','Fredag','Lördag'];
   const monthNames = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
@@ -684,6 +739,69 @@ async function renderContent(){
   if(state.view === 'settings') return renderSettings(content);
 }
 
+/* ---- Måltidsmönster: vad händer dagar då ett mål hoppas över? ---- */
+function mealPatterns(results){
+  const logged = results.filter(r => r.totals.intake > 0 && r.day);
+  const out = [];
+  MEAL_TYPES.slice(0,3).forEach(kind => {
+    const withIt = [], without = [];
+    logged.forEach(r => {
+      const has = r.day.food.some(f =>
+        (f.mealType || detectMealType(f.name)) === kind.key);
+      (has ? withIt : without).push(r.totals);
+    });
+    if(withIt.length < 4 || without.length < 4) return;
+    const avg = (arr, key) => Math.round(arr.reduce((s,t)=>s+t[key],0)/arr.length);
+    out.push({
+      kind,
+      nWith: withIt.length, nWithout: without.length,
+      intakeWith: avg(withIt,'intake'), intakeWithout: avg(without,'intake'),
+      proteinWith: avg(withIt,'protein'), proteinWithout: avg(without,'protein')
+    });
+  });
+  return out;
+}
+
+function mealPatternBlock(results){
+  const pats = mealPatterns(results);
+  if(!pats.length){
+    return `<div class="card">
+      <div class="sectitle" style="margin:0 0 8px 2px;">Måltidsmönster</div>
+      <div class="empty" style="text-align:left; padding:0;">
+        Namnge måltider med "frukost", "lunch" eller "middag" så jämförs dagar med och utan varje mål.
+        Kräver minst 4 dagar i varje grupp.
+      </div>
+    </div>`;
+  }
+  return `<div class="card">
+    <div class="sectitle" style="margin:0 0 8px 2px;">Måltidsmönster</div>
+    ${pats.map(p => {
+      const diff = p.intakeWithout - p.intakeWith;
+      const pDiff = p.proteinWithout - p.proteinWith;
+      const more = diff > 0;
+      return `<div class="patrow">
+        <div class="patlbl">Dagar utan ${p.kind.label.toLowerCase()}
+          <small>${p.nWithout} dagar utan · ${p.nWith} med</small></div>
+        <div class="patval" style="color:${Math.abs(diff) < 100 ? 'var(--muted)' : (more ? 'var(--rust)' : 'var(--sage)')}">
+          ${more?'+':'−'}${Math.abs(diff)} kcal
+        </div>
+      </div>
+      <div class="cmp-note" style="margin:0 0 12px;">
+        ${Math.abs(diff) < 100
+          ? `Intaget skiljer sig knappt (${p.intakeWith} mot ${p.intakeWithout} kcal). Att hoppa över verkar inte påverka totalen.`
+          : more
+            ? `Du åt i snitt mer totalt de dagar ${p.kind.label.toLowerCase()} saknades (${p.intakeWithout} mot ${p.intakeWith} kcal) — det äts alltså upp senare på dagen och lite till.`
+            : `Du åt i snitt mindre totalt de dagar ${p.kind.label.toLowerCase()} saknades (${p.intakeWithout} mot ${p.intakeWith} kcal) — måltiden kompenserades inte fullt ut.`}
+        ${Math.abs(pDiff) >= 15 ? ` Proteinet ${pDiff < 0 ? 'sjönk' : 'steg'} ${Math.abs(pDiff)} g i snitt.` : ''}
+      </div>`;
+    }).join('')}
+    <div class="cmp-note" style="border-top:1px solid var(--line); padding-top:8px;">
+      Det här är en observation, inte ett orsakssamband — dagar då du hoppar över ett mål skiljer sig
+      förmodligen på fler sätt (arbetspass, resor, träning). Med få dagar är siffrorna dessutom skakiga.
+    </div>
+  </div>`;
+}
+
 /* ---- Kopiera en tidigare dag ---- */
 function recentLoggedDays(limit){
   const cur = ymd(state.currentDate);
@@ -833,6 +951,7 @@ async function renderDay(content){
   const addFoodBtn = document.getElementById('addFood');
   if(addFoodBtn) addFoodBtn.onclick = () => {
     state.openForm = 'food';
+    state.mealType = null;
     state.editingFav = null;
     state.foodFormMode = 'quick';
     state.mealBuilder = [emptyIngredient()];
@@ -989,7 +1108,7 @@ async function renderDay(content){
         protein: Math.round((fav.protein||0) * q * 10)/10,
         fat: Math.round((fav.fat||0) * q * 10)/10,
         carbs: Math.round((fav.carbs||0) * q * 10)/10,
-        time: nowHM()
+        time: timeForEntry(q === 1 ? fav.name : q + '× ' + fav.name)
       };
       if(fav.components && fav.components.length){
         entry.components = fav.components.map(c => ({...c, amount: (Number(c.amount)||0) * q}));
@@ -1048,6 +1167,7 @@ async function renderDay(content){
     const wasEditing = state.editingFav !== null;
     state.editingFav = null;
     state.confirmDelFav = null;
+    state.mealType = null;
     state.mealBuilder = [];
     state.openForm = wasEditing ? 'favorites' : null;
     renderContent();
@@ -1069,7 +1189,8 @@ async function renderDay(content){
       renderContent();
       return;
     }
-    data.food.push({ name, kcal, protein, fat, carbs, time: nowHM() });
+    data.food.push({ name, kcal, protein, fat, carbs, time: timeForEntry(name, state.mealType),
+      ...(state.mealType ? { mealType: state.mealType } : {}) });
     sortByTime(data.food);
     await saveDay(dateStr, data);
     const favCb = document.getElementById('fSaveFav');
@@ -1105,6 +1226,13 @@ async function renderDay(content){
 
   content.querySelectorAll('.estbtn[id^="estBtn_"]').forEach(btn => {
     btn.onclick = () => estimateIngredient(Number(btn.dataset.idx));
+  });
+
+  content.querySelectorAll('.mtbtn').forEach(b => {
+    b.onclick = () => {
+      state.mealType = state.mealType === b.dataset.mt ? null : b.dataset.mt;
+      renderContent();
+    };
   });
 
   const quickEstBtn = document.getElementById('quickEstBtn');
@@ -1202,7 +1330,8 @@ async function renderDay(content){
       fat: Math.round(t.fat),
       carbs: Math.round(t.carbs),
       components,
-      time: nowHM()
+      time: timeForEntry(nameInput || comps.map(x=>x.name).join(', '), state.mealType),
+      ...(state.mealType ? { mealType: state.mealType } : {})
     };
     if(state.editingFav !== null){
       state.favorites[state.editingFav] = { ...entry };
@@ -1222,6 +1351,7 @@ async function renderDay(content){
       state.favorites.push({ ...entry });
       await ghSaveBundle();
     }
+    state.mealType = null;
     state.openForm = null;
     state.mealBuilder = [];
     renderContent();
@@ -1287,9 +1417,11 @@ function entryRow(item, idx, type){
   const time = item.time
     ? `<button class="etime edittime" data-type="${type}" data-idx="${idx}" title="Ändra tid">${item.time}</button>`
     : `<button class="etime edittime notime" data-type="${type}" data-idx="${idx}" title="Sätt tid">– –</button>`;
+  const mt = type === 'food' ? (item.mealType || detectMealType(item.name)) : null;
+  const mtTag = mt ? `<span class="mtag">${mealTypeLabel(mt)}</span>` : '';
   return `<div class="entry ${type}">
     <div>
-      <div class="name">${time}${item.name}</div>
+      <div class="name">${time}${mtTag}${item.name}</div>
       ${sub}
     </div>
     <div class="right">
@@ -1366,6 +1498,9 @@ function quickFoodForm(){
   const v = (k) => ed && ed[k] !== undefined ? ed[k] : '';
   return `
     <div class="row"><input id="fName" placeholder="T.ex. 2 ägg och en banan" value="${ed ? ed.name : ''}"></div>
+    <div class="mealtypes">
+      ${MEAL_TYPES.map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}
+    </div>
     <div style="display:flex; gap:6px; margin-bottom:8px;">
       <button class="estbtn" id="quickEstBtn" style="flex:1;">✨ Uppskatta text</button>
       <button class="estbtn" id="quickPhotoBtn" style="flex:1;">📸 Fota maten</button>
@@ -1487,6 +1622,10 @@ function buildMealForm(){
   return `
     ${pantryDatalist()}
     <div class="row"><input id="buildMealName" placeholder="Namn på måltiden (valfritt)" value="${state.editingFav !== null && state.favorites[state.editingFav] ? state.favorites[state.editingFav].name : ''}"></div>
+    <div class="mealtypes">
+      ${MEAL_TYPES.map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}
+    </div>
+
     ${state.mealBuilder.map((row,i)=>ingredientRow(row,i)).join('')}
     <button class="addingbtn" id="addIngredient">+ Lägg till livsmedel</button>
     <div class="mealtotals">
@@ -2030,7 +2169,7 @@ async function renderWeek(content){
   const results = [];
   for(const d of days){
     const data = await loadDay(ymd(d));
-    results.push({ date: d, totals: dayTotals(data) });
+    results.push({ date: d, totals: dayTotals(data), day: data });
   }
   if(isStale(token)) return;
   const goal = state.settings.dailyGoal;
@@ -2059,6 +2198,7 @@ async function renderWeek(content){
       </div>
       ${balanceBlock(results, goal, 'denna vecka')}
       ${comparisonBlock(st, actualKg, 'veckan')}
+      ${mealPatternBlock(results, goal)}
     </div>
   `;
   document.getElementById('prevWeek').onclick = () => { state.currentDate.setDate(state.currentDate.getDate()-7); renderContent(); };
@@ -2089,7 +2229,7 @@ async function renderMonth(content){
   for(let day=1; day<=daysInMonth; day++){
     const d = new Date(year, month, day);
     const data = await loadDay(ymd(d));
-    results.push({ date: d, totals: dayTotals(data) });
+    results.push({ date: d, totals: dayTotals(data), day: data });
   }
   if(isStale(token)) return;
   const goal = state.settings.dailyGoal;
@@ -2124,6 +2264,7 @@ async function renderMonth(content){
       </div>
       ${balanceBlock(results, goal, 'denna månad')}
       ${comparisonBlock(st, weightChange, 'månaden')}
+      ${mealPatternBlock(results, goal)}
     </div>
     <div class="card">
       <div class="sectitle" style="margin:0 0 8px 2px;">Viktkurva</div>
