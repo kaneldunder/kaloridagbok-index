@@ -92,6 +92,7 @@
   .macro .lbl{font-size:11px; color:var(--muted);}
   .macro .lbl em{display:block; font-style:normal; font-size:9.5px; opacity:.75; margin-top:1px;}
   .macro .amt{font-size:13px; font-weight:600;}
+  .macro .mshare{font-size:10.5px; font-weight:500; color:var(--muted);}
 
   .sectitle{
     font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted);
@@ -950,9 +951,13 @@ async function renderDay(content){
       <div class="macrorow">
         ${(() => {
           const mt = macroTargets();
-          return macroBar('Protein', t.protein, mt ? mt.protein : 130, mt ? 'mål ' + mt.protein + 'g' : '', 'target')
-               + macroBar('Fett', t.fat, mt ? mt.fatFloor : 60, mt ? 'minst ' + mt.fatFloor + 'g' : '', 'floor')
-               + macroBar('Kolh.', t.carbs, 0, 'fritt', 'free');
+          // Andel av intagets kalorier (4/9/4 kcal per gram)
+          const kP = t.protein*4, kF = t.fat*9, kC = t.carbs*4;
+          const sum = kP + kF + kC;
+          const pct = v => sum > 0 ? Math.round(v/sum*100) : 0;
+          return macroBar('Protein', t.protein, pct(kP), mt ? 'mål ' + mt.protein + 'g' : '', 'target', mt ? mt.protein : null)
+               + macroBar('Fett', t.fat, pct(kF), mt ? 'minst ' + mt.fatFloor + 'g' : '', 'floor', mt ? mt.fatFloor : null)
+               + macroBar('Kolh.', t.carbs, pct(kC), '', 'free', null);
         })()}
       </div>
     </div>
@@ -1443,20 +1448,17 @@ async function renderDay(content){
   });
 }
 
-/* kind: 'target' (nå den), 'floor' (minst), 'free' (ingen siffra) */
-function macroBar(label, amount, target, sub, kind){
+/* Stapeln visar andel av dagens kalorier. Färgen visar om målet/golvet är nått.
+   kind: 'target' (protein), 'floor' (fett), 'free' (kolhydrater) */
+function macroBar(label, amount, sharePct, sub, kind, target){
   const a = Math.round(amount);
-  let pct = 0, col = 'var(--sage)';
-  if(kind === 'free'){
-    pct = 100; col = 'var(--line)';
-  } else {
-    pct = target > 0 ? Math.max(0, Math.min(100, Math.round((a/target)*100))) : 0;
-    if(kind === 'target') col = a >= target ? 'var(--sage)' : 'var(--gold)';
-    if(kind === 'floor')  col = a >= target ? 'var(--sage)' : 'var(--rust)';
-  }
+  let col = 'var(--line)';
+  if(kind === 'target') col = target && a >= target ? 'var(--sage)' : 'var(--gold)';
+  if(kind === 'floor')  col = target && a >= target ? 'var(--sage)' : 'var(--rust)';
+  if(kind === 'free')   col = 'var(--muted)';
   return `<div class="macro">
-    <div class="bar"><i style="width:${pct}%; background:${col}"></i></div>
-    <div class="amt">${a}g</div>
+    <div class="bar"><i style="width:${sharePct}%; background:${col}; opacity:${kind==='free'?.45:1}"></i></div>
+    <div class="amt">${a}g <span class="mshare">${sharePct}%</span></div>
     <div class="lbl">${label}${sub ? `<em>${sub}</em>` : ''}</div>
   </div>`;
 }
