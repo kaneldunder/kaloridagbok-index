@@ -2250,6 +2250,14 @@ function inBaselineMode(){
 }
 
 /* Statistik för en period. 7700 kcal ≈ 1 kg kroppsfett. */
+/* Grön under mål, gul upp till 10 % över, röd därefter. */
+function avgNetColor(avg, goal){
+  if(!goal || !avg) return 'var(--ink)';
+  if(avg <= goal) return 'var(--sage)';
+  if(avg <= goal * 1.10) return 'var(--gold)';
+  return 'var(--rust)';
+}
+
 function periodStats(results, goal){
   const logged = results.filter(r => r.totals.intake > 0);
   const avgNet = logged.length ? Math.round(logged.reduce((s,r)=>s+r.totals.net,0)/logged.length) : 0;
@@ -2308,10 +2316,10 @@ async function renderWeek(content){
       </div>
       ${netBarChart(results, goal, 'week')}
       <div class="summaryrow">
-        <div class="stat"><div class="k">Snitt netto/dag</div><div class="v">${st.avgNet}</div></div>
+        <div class="stat"><div class="k">Snitt netto/dag</div><div class="v" style="color:${avgNetColor(st.avgNet, goal)}">${st.avgNet}</div></div>
+        <div class="stat"><div class="k">Mål/dag</div><div class="v">${goal}</div></div>
         <div class="stat"><div class="k">Protein snitt/dag</div>
           <div class="v" style="color:${(() => { const mt=macroTargets(); return mt && st.avgProtein >= mt.protein ? 'var(--sage)' : 'var(--ink)'; })()}">${st.avgProtein} g${(() => { const mt=macroTargets(); return mt ? ' <em style="font-size:10px;font-weight:400;color:var(--muted);font-style:normal;">/ '+mt.protein+'</em>' : ''; })()}</div></div>
-        <div class="stat"><div class="k">Mål/dag</div><div class="v">${goal}</div></div>
       </div>
       <div class="summaryrow">
         <div class="stat"><div class="k">Loggade dagar</div><div class="v">${st.logged}/7</div></div>
@@ -2375,10 +2383,10 @@ async function renderMonth(content){
       </div>
       ${netBarChart(results, goal, 'month')}
       <div class="summaryrow">
-        <div class="stat"><div class="k">Snitt netto/dag</div><div class="v">${st.avgNet}</div></div>
+        <div class="stat"><div class="k">Snitt netto/dag</div><div class="v" style="color:${avgNetColor(st.avgNet, goal)}">${st.avgNet}</div></div>
+        <div class="stat"><div class="k">Mål/dag</div><div class="v">${goal}</div></div>
         <div class="stat"><div class="k">Protein snitt/dag</div>
           <div class="v" style="color:${(() => { const mt=macroTargets(); return mt && st.avgProtein >= mt.protein ? 'var(--sage)' : 'var(--ink)'; })()}">${st.avgProtein} g${(() => { const mt=macroTargets(); return mt ? ' <em style="font-size:10px;font-weight:400;color:var(--muted);font-style:normal;">/ '+mt.protein+'</em>' : ''; })()}</div></div>
-        <div class="stat"><div class="k">Mål/dag</div><div class="v">${goal}</div></div>
       </div>
       <div class="summaryrow">
         <div class="stat"><div class="k">Loggade dagar</div><div class="v">${st.logged}/${daysInMonth}</div></div>
@@ -2507,10 +2515,10 @@ function renderYear(content){
           Staplar uppåt = underskott, nedåt = överskott. Varje månad räknas bara på de dagar du loggat.
         </div>
         <div class="summaryrow">
-          <div class="stat"><div class="k">Snitt netto/dag</div><div class="v">${avgNet}</div></div>
+          <div class="stat"><div class="k">Snitt netto/dag</div><div class="v" style="color:${avgNetColor(avgNet, goal)}">${avgNet}</div></div>
+          <div class="stat"><div class="k">Mål/dag</div><div class="v">${goal}</div></div>
           <div class="stat"><div class="k">Protein snitt/dag</div>
             <div class="v" style="color:${(() => { const mt=macroTargets(); return mt && avgProtein >= mt.protein ? 'var(--sage)' : 'var(--ink)'; })()}">${avgProtein} g${(() => { const mt=macroTargets(); return mt ? ' <em style="font-size:10px;font-weight:400;color:var(--muted);font-style:normal;">/ '+mt.protein+'</em>' : ''; })()}</div></div>
-          <div class="stat"><div class="k">Mål/dag</div><div class="v">${goal}</div></div>
         </div>
         <div class="summaryrow">
           <div class="stat"><div class="k">Loggade dagar</div><div class="v">${totalLogged}</div></div>
