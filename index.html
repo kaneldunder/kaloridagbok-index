@@ -270,6 +270,23 @@
     padding:8px 11px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit;
   }
   .activesave.pending{background:var(--ink);}
+  .missbox{background:#FBF6EA; border:1px solid var(--gold); border-radius:12px; padding:10px 12px; margin-bottom:10px;}
+  .misslbl{font-size:12.5px; font-weight:600; color:#8A6D2A;}
+  .misslbl small{display:block; font-weight:400; font-size:11px; color:var(--muted); margin-top:1px;}
+  .misschips{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; align-items:center;}
+  .misschip{
+    border:1px solid var(--gold); background:#fff; color:#8A6D2A; border-radius:16px;
+    padding:5px 11px; font-size:11.5px; font-weight:600; cursor:pointer; font-family:inherit; white-space:nowrap;
+  }
+  .missmore{font-size:11px; color:var(--muted);}
+  .copyday{
+    display:flex; align-items:center; justify-content:space-between; width:100%;
+    background:#fff; border:1px solid var(--line); border-radius:11px;
+    padding:11px 12px; margin-bottom:7px; cursor:pointer; font-family:inherit; text-align:left;
+  }
+  .copyday b{display:block; font-size:13.5px; color:var(--ink); font-weight:600;}
+  .copyday small{display:block; font-size:11.5px; color:var(--muted); margin-top:1px;}
+  .copyday .dtk{font-size:14px; font-weight:600; color:var(--rust); white-space:nowrap;}
   .summaryrow{display:flex; gap:8px; margin-top:14px;}
   .summaryrow .stat{flex:1;}
   .compare{margin-top:14px; padding:12px; background:var(--paper); border-radius:12px;}
@@ -619,7 +636,17 @@ function render(){
     <div id="content"></div>
   `;
   app.querySelectorAll('nav.tabs button').forEach(btn=>{
-    btn.onclick = () => { state.view = btn.dataset.view; state.openForm = null; render(); };
+    btn.onclick = () => {
+      const v = btn.dataset.view;
+      // Tryck på Dag återgår alltid till idag
+      if(v === 'day' && (state.view !== 'day' || ymd(state.currentDate) !== todayYmd())){
+        state.currentDate = new Date();
+      }
+      state.view = v;
+      state.openForm = null;
+      state.editingTime = null;
+      render();
+    };
   });
   const refreshBtn = document.getElementById('refreshAll');
   if(refreshBtn) refreshBtn.onclick = async () => {
@@ -655,6 +682,71 @@ async function renderContent(){
   if(state.view === 'year') return renderYear(content);
   if(state.view === 'weight') return renderWeightView(content);
   if(state.view === 'settings') return renderSettings(content);
+}
+
+/* ---- Kopiera en tidigare dag ---- */
+function recentLoggedDays(limit){
+  const cur = ymd(state.currentDate);
+  const out = [];
+  for(let i = 1; i <= 30 && out.length < (limit||6); i++){
+    const d = new Date(state.currentDate);
+    d.setDate(d.getDate() - i);
+    const key = ymd(d);
+    if(key === cur) continue;
+    const day = state.cache[key];
+    if(!day) continue;
+    const t = dayTotals(day);
+    if(t.intake <= 0) continue;
+    out.push({ date: d, key, totals: t, meals: day.food.length });
+  }
+  return out;
+}
+function copyDayAvailable(){ return recentLoggedDays(1).length > 0; }
+
+function copyDayPanel(){
+  const days = recentLoggedDays(6);
+  const wd = ['Söndag','Måndag','Tisdag','Onsdag','Torsdag','Fredag','Lördag'];
+  const mn = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
+  const target = state.cache[ymd(state.currentDate)] || { food: [] };
+  const hasFood = target.food.length > 0;
+  return `<div class="form">
+    <div class="cmp-note" style="margin:0 0 10px;">
+      Kopierar måltiderna${hasFood ? ' och lägger dem till de ' + target.food.length + ' du redan har' : ''}. Träning kopieras inte.
+    </div>
+    ${days.map(d => `
+      <button class="copyday" data-key="${d.key}">
+        <span><b>${wd[d.date.getDay()]} ${d.date.getDate()} ${mn[d.date.getMonth()]}</b>
+          <small>${d.meals} ${d.meals === 1 ? 'måltid' : 'måltider'} · P ${Math.round(d.totals.protein)}g</small></span>
+        <span class="dtk">${d.totals.intake} kcal</span>
+      </button>`).join('')}
+    <div class="actions" style="margin-top:10px;"><button class="cancel" id="cancelForm">Avbryt</button></div>
+  </div>`;
+}
+
+/* Ologgade dagar de senaste 7 dagarna (exkl. idag). */
+function missingDays(){
+  const out = [];
+  for(let i = 1; i <= 7; i++){
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = ymd(d);
+    const day = state.cache[key];
+    if(!day || dayTotals(day).intake <= 0) out.push(d);
+  }
+  return out;
+}
+function missingDaysNotice(){
+  if(ymd(state.currentDate) !== todayYmd()) return '';
+  const miss = missingDays();
+  if(!miss.length) return '';
+  const wd = ['sön','mån','tis','ons','tors','fre','lör'];
+  const chips = miss.slice(0,4).map(d =>
+    `<button class="misschip" data-ymd="${ymd(d)}">${wd[d.getDay()]} ${d.getDate()}/${d.getMonth()+1}</button>`).join('');
+  return `<div class="missbox">
+    <div class="misslbl">${miss.length === 1 ? '1 dag saknas' : miss.length + ' dagar saknas'} senaste veckan
+      <small>Ologgade dagar räknas inte med i snitt och balans.</small></div>
+    <div class="misschips">${chips}${miss.length > 4 ? `<span class="missmore">+${miss.length-4}</span>` : ''}</div>
+  </div>`;
 }
 
 /* ---------- DAY VIEW ---------- */
@@ -703,12 +795,16 @@ async function renderDay(content){
       </div>
     </div>
 
+    ${missingDaysNotice()}
     <div class="sectitle">Måltider</div>
-    ${state.openForm === 'food' ? foodForm() : state.openForm === 'favorites' ? favoritesPanel() : `
+    ${state.openForm === 'food' ? foodForm()
+      : state.openForm === 'favorites' ? favoritesPanel()
+      : state.openForm === 'copyDay' ? copyDayPanel() : `
       <div style="display:flex; gap:8px;">
         <button class="addbtn food" id="addFood" style="flex:1;">+ Lägg till måltid</button>
         <button class="addbtn" id="showFavorites" style="flex:1; border-color:var(--gold); color:#8A6D2A;">⭐ Favoriter</button>
       </div>
+      ${copyDayAvailable() ? `<button class="addbtn" id="copyDayBtn" style="width:100%;">⧉ Kopiera en tidigare dag</button>` : ''}
     `}
     ${data.food.length ? data.food.map((f,i)=>
       (state.editingTime && state.editingTime.type==='food' && state.editingTime.idx===i)
@@ -817,6 +913,30 @@ async function renderDay(content){
       renderContent();
     };
   }
+
+  const copyBtn = document.getElementById('copyDayBtn');
+  if(copyBtn) copyBtn.onclick = () => { state.openForm = 'copyDay'; renderContent(); };
+
+  content.querySelectorAll('.copyday').forEach(btn => {
+    btn.onclick = async () => {
+      const src = state.cache[btn.dataset.key];
+      if(!src) return;
+      src.food.forEach(f => data.food.push(JSON.parse(JSON.stringify(f))));
+      sortByTime(data.food);
+      await saveDay(dateStr, data);
+      state.openForm = null;
+      renderContent();
+    };
+  });
+
+  content.querySelectorAll('.misschip').forEach(btn => {
+    btn.onclick = () => {
+      const [y,m,dd] = btn.dataset.ymd.split('-').map(Number);
+      state.currentDate = new Date(y, m-1, dd);
+      state.openForm = null;
+      renderContent();
+    };
+  });
 
   const showFavBtn = document.getElementById('showFavorites');
   if(showFavBtn) showFavBtn.onclick = () => { state.openForm = 'favorites'; state.confirmDelFav = null; renderContent(); };
