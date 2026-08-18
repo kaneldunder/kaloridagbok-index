@@ -2273,14 +2273,14 @@ async function renderWeek(content){
       ${netBarChart(results, goal, 'week')}
       <div class="summaryrow">
         <div class="stat"><div class="k">Snitt netto/dag</div><div class="v">${st.avgNet}</div></div>
-        <div class="stat sage"><div class="k">Träning totalt</div><div class="v">−${st.totalBurned}</div></div>
+        <div class="stat"><div class="k">Protein snitt/dag</div>
+          <div class="v" style="color:${(() => { const mt=macroTargets(); return mt && st.avgProtein >= mt.protein ? 'var(--sage)' : 'var(--ink)'; })()}">${st.avgProtein} g${(() => { const mt=macroTargets(); return mt ? ' <em style="font-size:10px;font-weight:400;color:var(--muted);font-style:normal;">/ '+mt.protein+'</em>' : ''; })()}</div></div>
         <div class="stat"><div class="k">Mål/dag</div><div class="v">${goal}</div></div>
       </div>
       <div class="summaryrow">
-        <div class="stat"><div class="k">Protein snitt/dag</div>
-          <div class="v" style="color:${(() => { const mt=macroTargets(); return mt && st.avgProtein >= mt.protein ? 'var(--sage)' : 'var(--ink)'; })()}">${st.avgProtein} g${(() => { const mt=macroTargets(); return mt ? ' <em style="font-size:10px;font-weight:400;color:var(--muted);font-style:normal;">/ '+mt.protein+'</em>' : ''; })()}</div></div>
         <div class="stat"><div class="k">Loggade dagar</div><div class="v">${st.logged}/7</div></div>
         <div class="stat sage"><div class="k">Dagar under mål</div><div class="v">${st.daysUnder}/${st.logged}</div></div>
+        <div class="stat sage"><div class="k">Träning totalt</div><div class="v">−${st.totalBurned}</div></div>
       </div>
       ${balanceBlock(results, goal, 'denna vecka')}
       ${comparisonBlock(st, actualKg, 'veckan')}
@@ -2339,15 +2339,18 @@ async function renderMonth(content){
       </div>
       ${netBarChart(results, goal, 'month')}
       <div class="summaryrow">
-        <div class="stat"><div class="k">Snitt netto</div><div class="v">${st.avgNet}</div></div>
-        <div class="stat"><div class="k">Protein snitt</div>
+        <div class="stat"><div class="k">Snitt netto/dag</div><div class="v">${st.avgNet}</div></div>
+        <div class="stat"><div class="k">Protein snitt/dag</div>
           <div class="v" style="color:${(() => { const mt=macroTargets(); return mt && st.avgProtein >= mt.protein ? 'var(--sage)' : 'var(--ink)'; })()}">${st.avgProtein} g${(() => { const mt=macroTargets(); return mt ? ' <em style="font-size:10px;font-weight:400;color:var(--muted);font-style:normal;">/ '+mt.protein+'</em>' : ''; })()}</div></div>
-        <div class="stat"><div class="k">Loggade dagar</div><div class="v">${st.logged}/${daysInMonth}</div></div>
+        <div class="stat"><div class="k">Mål/dag</div><div class="v">${goal}</div></div>
       </div>
       <div class="summaryrow">
+        <div class="stat"><div class="k">Loggade dagar</div><div class="v">${st.logged}/${daysInMonth}</div></div>
         <div class="stat sage"><div class="k">Dagar under mål</div><div class="v">${st.daysUnder}/${st.logged}</div></div>
         <div class="stat sage"><div class="k">Träning totalt</div><div class="v">−${st.totalBurned}</div></div>
-        <div class="stat ${weightChange!==null && weightChange<0?'sage':'rust'}"><div class="k">Vikt denna månad</div><div class="v">${weightChange!==null ? signed(weightChange,1)+' kg' : '—'}</div></div>
+      </div>
+      <div class="summaryrow">
+        <div class="stat ${weightChange!==null && weightChange<0?'sage':''}"><div class="k">Vikt denna månad</div><div class="v">${weightChange!==null ? signed(weightChange,1)+' kg' : '—'}</div></div>
       </div>
       ${balanceBlock(results, goal, 'denna månad')}
       ${comparisonBlock(st, weightChange, 'månaden')}
@@ -2469,8 +2472,14 @@ function renderYear(content){
         </div>
         <div class="summaryrow">
           <div class="stat"><div class="k">Snitt netto/dag</div><div class="v">${avgNet}</div></div>
-          <div class="stat"><div class="k">Protein snitt</div><div class="v">${avgProtein} g</div></div>
+          <div class="stat"><div class="k">Protein snitt/dag</div>
+            <div class="v" style="color:${(() => { const mt=macroTargets(); return mt && avgProtein >= mt.protein ? 'var(--sage)' : 'var(--ink)'; })()}">${avgProtein} g${(() => { const mt=macroTargets(); return mt ? ' <em style="font-size:10px;font-weight:400;color:var(--muted);font-style:normal;">/ '+mt.protein+'</em>' : ''; })()}</div></div>
+          <div class="stat"><div class="k">Mål/dag</div><div class="v">${goal}</div></div>
+        </div>
+        <div class="summaryrow">
+          <div class="stat"><div class="k">Loggade dagar</div><div class="v">${totalLogged}</div></div>
           <div class="stat ${kgChange!==null && kgChange<0?'sage':''}"><div class="k">Vikt i år</div><div class="v">${kgChange!==null?signed(kgChange,1)+' kg':'—'}</div></div>
+          <div class="stat"></div>
         </div>
         ${best && best.balance > 0 ? `<div class="cmp-note">Bästa månaden: <b>${MONTH_SHORT[best.month]}</b> med ${best.balance.toLocaleString('sv-SE')} kcal underskott på ${best.logged} loggade dagar.</div>` : ''}
       ` : `<div class="empty">Inga loggade dagar ${year} än.</div>`}
