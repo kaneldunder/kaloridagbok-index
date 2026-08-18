@@ -274,9 +274,23 @@
   .misslbl{font-size:12.5px; font-weight:600; color:#8A6D2A;}
   .misslbl small{display:block; font-weight:400; font-size:11px; color:var(--muted); margin-top:1px;}
   .misschips{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; align-items:center;}
+  .misshead{display:flex; align-items:flex-start; justify-content:space-between; gap:8px;}
+  .misshide{
+    flex-shrink:0; border:none; background:transparent; color:var(--muted);
+    font-size:11px; font-weight:600; cursor:pointer; font-family:inherit;
+    text-decoration:underline; padding:0;
+  }
   .misschip{
-    border:1px solid var(--gold); background:#fff; color:#8A6D2A; border-radius:16px;
-    padding:5px 11px; font-size:11.5px; font-weight:600; cursor:pointer; font-family:inherit; white-space:nowrap;
+    display:inline-flex; align-items:stretch; border:1px solid var(--gold);
+    background:#fff; border-radius:16px; overflow:hidden; white-space:nowrap;
+  }
+  .misschip .mcgo{
+    border:none; background:transparent; color:#8A6D2A;
+    padding:5px 8px 5px 11px; font-size:11.5px; font-weight:600; cursor:pointer; font-family:inherit;
+  }
+  .misschip .mcskip{
+    border:none; border-left:1px solid var(--gold); background:transparent;
+    color:var(--muted); padding:0 8px; font-size:13px; cursor:pointer; font-family:inherit; line-height:1;
   }
   .missmore{font-size:11px; color:var(--muted);}
   .copyday{
@@ -363,6 +377,7 @@ let state = {
   favQty: {},
   editingTime: null,
   mealType: null,
+  skippedDays: [],
   lastSync: null,
   gh: { owner: '', repo: '', token: '', path: 'kaloridagbok-data.json', branch: 'main', sha: null },
   aiKey: '',
@@ -626,6 +641,7 @@ async function ghSaveBundle(retry = true){
     weights: state.weights,
     favorites: state.favorites,
     pantry: state.pantry,
+    skippedDays: state.skippedDays,
     days: state.cache
   };
   try{
@@ -713,6 +729,7 @@ function render(){
       if(bundle.weights) state.weights = bundle.weights;
       if(bundle.favorites) state.favorites = bundle.favorites;
       if(bundle.pantry) state.pantry = bundle.pantry;
+      if(bundle.skippedDays) state.skippedDays = bundle.skippedDays;
       if(bundle.days) state.cache = bundle.days;
     }
     refreshBtn.disabled = false;
@@ -848,6 +865,7 @@ function missingDays(){
     const d = new Date();
     d.setDate(d.getDate() - i);
     const key = ymd(d);
+    if(state.skippedDays.includes(key)) continue;
     const day = state.cache[key];
     if(!day || dayTotals(day).intake <= 0) out.push(d);
   }
@@ -858,11 +876,19 @@ function missingDaysNotice(){
   const miss = missingDays();
   if(!miss.length) return '';
   const wd = ['sön','mån','tis','ons','tors','fre','lör'];
-  const chips = miss.slice(0,4).map(d =>
-    `<button class="misschip" data-ymd="${ymd(d)}">${wd[d.getDay()]} ${d.getDate()}/${d.getMonth()+1}</button>`).join('');
+  const chips = miss.slice(0,4).map(d => {
+    const k = ymd(d);
+    return `<span class="misschip">
+      <button class="mcgo" data-ymd="${k}">${wd[d.getDay()]} ${d.getDate()}/${d.getMonth()+1}</button>
+      <button class="mcskip" data-ymd="${k}" title="Hoppa över dagen">×</button>
+    </span>`;
+  }).join('');
   return `<div class="missbox">
-    <div class="misslbl">${miss.length === 1 ? '1 dag saknas' : miss.length + ' dagar saknas'} senaste veckan
-      <small>Ologgade dagar räknas inte med i snitt och balans.</small></div>
+    <div class="misshead">
+      <div class="misslbl">${miss.length === 1 ? '1 dag saknas' : miss.length + ' dagar saknas'} senaste veckan
+        <small>Tryck på en dag för att fylla i, eller × för att hoppa över den.</small></div>
+      <button class="misshide" id="skipAllMissing" title="Hoppa över alla">Dölj alla</button>
+    </div>
     <div class="misschips">${chips}${miss.length > 4 ? `<span class="missmore">+${miss.length-4}</span>` : ''}</div>
   </div>`;
 }
@@ -1048,7 +1074,7 @@ async function renderDay(content){
     };
   });
 
-  content.querySelectorAll('.misschip').forEach(btn => {
+  content.querySelectorAll('.mcgo').forEach(btn => {
     btn.onclick = () => {
       const [y,m,dd] = btn.dataset.ymd.split('-').map(Number);
       state.currentDate = new Date(y, m-1, dd);
@@ -1056,6 +1082,25 @@ async function renderDay(content){
       renderContent();
     };
   });
+
+  content.querySelectorAll('.mcskip').forEach(btn => {
+    btn.onclick = async () => {
+      const k = btn.dataset.ymd;
+      if(!state.skippedDays.includes(k)) state.skippedDays.push(k);
+      await ghSaveBundle();
+      renderContent();
+    };
+  });
+
+  const skipAll = document.getElementById('skipAllMissing');
+  if(skipAll) skipAll.onclick = async () => {
+    missingDays().forEach(d => {
+      const k = ymd(d);
+      if(!state.skippedDays.includes(k)) state.skippedDays.push(k);
+    });
+    await ghSaveBundle();
+    renderContent();
+  };
 
   const showFavBtn = document.getElementById('showFavorites');
   if(showFavBtn) showFavBtn.onclick = () => { state.openForm = 'favorites'; state.confirmDelFav = null; renderContent(); };
@@ -2565,6 +2610,21 @@ function renderSettings(content){
       <div id="calcResult"></div>
     </div>
 
+    ${state.skippedDays.length ? `
+    <div class="sectitle">Överhoppade dagar</div>
+    <div class="card">
+      <div class="empty" style="text-align:left; padding:0 0 10px;">
+        Dessa dagar påminner appen inte om. De räknas fortfarande inte in i snitt och balans.
+      </div>
+      <div class="misschips">
+        ${state.skippedDays.slice().sort().reverse().slice(0,14).map(k => `
+          <span class="misschip">
+            <button class="mcgo" data-ymd="${k}">${k.slice(8)}/${Number(k.slice(5,7))}</button>
+            <button class="unskip" data-ymd="${k}" title="Påminn igen">↺</button>
+          </span>`).join('')}
+      </div>
+    </div>` : ''}
+
     <div class="sectitle">Mitt livsmedelsbibliotek</div>
     <div class="card">
       <div class="empty" style="text-align:left; padding:0 0 10px;">
@@ -2661,6 +2721,24 @@ function renderSettings(content){
   if(defEl) defEl.onchange = () => onCalcInput('deficit', Number(defEl.value));
   refreshCalc();
 
+  content.querySelectorAll('.unskip').forEach(btn => {
+    btn.onclick = async () => {
+      state.skippedDays = state.skippedDays.filter(k => k !== btn.dataset.ymd);
+      await ghSaveBundle();
+      renderContent();
+    };
+  });
+
+  content.querySelectorAll('.mcgo').forEach(btn => {
+    btn.onclick = () => {
+      const [y,m,dd] = btn.dataset.ymd.split('-').map(Number);
+      state.currentDate = new Date(y, m-1, dd);
+      state.view = 'day';
+      state.openForm = null;
+      render();
+    };
+  });
+
   content.querySelectorAll('.delpantry').forEach(btn => {
     btn.onclick = async () => {
       state.pantry.splice(Number(btn.dataset.idx), 1);
@@ -2683,6 +2761,7 @@ function renderSettings(content){
       if(bundle.weights) state.weights = bundle.weights;
       if(bundle.favorites) state.favorites = bundle.favorites;
       if(bundle.pantry) state.pantry = bundle.pantry;
+      if(bundle.skippedDays) state.skippedDays = bundle.skippedDays;
       if(bundle.days) state.cache = bundle.days;
       ghStatus.innerHTML = '<span style="color:var(--sage)">✓ Anslutet och data hämtad.</span>';
     } else if(ghConfigured()){
@@ -2735,6 +2814,7 @@ function renderSettings(content){
       if(bundle.weights) state.weights = bundle.weights;
       if(bundle.favorites) state.favorites = bundle.favorites;
       if(bundle.pantry) state.pantry = bundle.pantry;
+      if(bundle.skippedDays) state.skippedDays = bundle.skippedDays;
       if(bundle.days) state.cache = bundle.days;
       await ghSaveBundle();
       ioStatus.innerHTML = '<span style="color:var(--sage)">✓ Importerat och sparat till GitHub!</span>';
@@ -2757,6 +2837,7 @@ async function init(){
       if(bundle.weights) state.weights = bundle.weights;
       if(bundle.favorites) state.favorites = bundle.favorites;
       if(bundle.pantry) state.pantry = bundle.pantry;
+      if(bundle.skippedDays) state.skippedDays = bundle.skippedDays;
       if(bundle.days) state.cache = bundle.days;
     }
   }
