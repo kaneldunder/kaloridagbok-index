@@ -250,6 +250,26 @@
   .netchart .axlbl{font-size:9px; fill:var(--muted); font-family:inherit;}
   .netchart .goallbl{font-size:9px; fill:var(--gold); font-family:inherit; font-weight:600;}
   .balancecurve .axlbl{font-size:9px; fill:var(--muted); font-family:inherit;}
+  .activerow{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:#fff; border:1.5px solid var(--gold); border-radius:12px;
+    padding:11px 12px; margin-bottom:8px;
+  }
+  .activerow.filled{border-color:var(--sage-light); background:var(--sage-light);}
+  .activelbl b{display:block; font-size:13.5px; font-weight:600;}
+  .activelbl small{display:block; font-size:11px; color:var(--muted); margin-top:1px;}
+  .activeinput{display:flex; align-items:center; gap:6px; flex-shrink:0;}
+  .activeinput input{
+    width:64px; border:1px solid var(--line); border-radius:8px; padding:8px 6px;
+    font-size:17px; font-weight:600; text-align:center; font-family:inherit;
+    background:#fff; color:var(--ink); -moz-appearance:textfield;
+  }
+  .activeinput .unit{font-size:11px; color:var(--muted);}
+  .activesave{
+    border:none; background:var(--sage); color:#fff; border-radius:8px;
+    padding:8px 11px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit;
+  }
+  .activesave.pending{background:var(--ink);}
   .summaryrow{display:flex; gap:8px; margin-top:14px;}
   .summaryrow .stat{flex:1;}
   .compare{margin-top:14px; padding:12px; background:var(--paper); border-radius:12px;}
@@ -591,9 +611,9 @@ function render(){
     </header>
     <div class="syncbar" id="syncBanner">${syncBannerHTML()}</div>
     <nav class="tabs">
-      ${['day','week','month','weight','settings'].map(v => `
+      ${['day','week','month','year','weight','settings'].map(v => `
         <button data-view="${v}" class="${state.view===v?'active':''}">
-          ${{day:'Dag',week:'Vecka',month:'Månad',weight:'Vikt',settings:'Inställ.'}[v]}
+          ${{day:'Dag',week:'Vecka',month:'Månad',year:'År',weight:'Vikt',settings:'Inst.'}[v]}
         </button>`).join('')}
     </nav>
     <div id="content"></div>
@@ -632,6 +652,7 @@ async function renderContent(){
   if(state.view === 'day') return renderDay(content);
   if(state.view === 'week') return renderWeek(content);
   if(state.view === 'month') return renderMonth(content);
+  if(state.view === 'year') return renderYear(content);
   if(state.view === 'weight') return renderWeightView(content);
   if(state.view === 'settings') return renderSettings(content);
 }
@@ -694,15 +715,20 @@ async function renderDay(content){
         ? timeEditRow(f,i,'food') : entryRow(f,i,'food')).join('') : `<div class="empty">Inga måltider loggade</div>`}
 
     <div class="sectitle">Träning & aktivitet</div>
+    ${inBaselineMode() ? activeKcalRow(data) : ''}
     ${state.openForm === 'exercise' ? exerciseForm()
       : state.openForm === 'dayEstimate' ? dayEstimatePanel(data)
       : `<div style="display:flex; gap:8px;">
           <button class="addbtn exercise" id="addExercise" style="flex:1;">+ Lägg till träning</button>
-          ${inBaselineMode() ? `<button class="addbtn" id="estimateDay" style="flex:1; border-color:var(--gold); color:#8A6D2A;">≈ Uppskatta dagen</button>` : ''}
+          ${inBaselineMode() ? `<button class="addbtn" id="estimateDay" style="flex:1; border-color:var(--gold); color:#8A6D2A;">≈ Uppskatta istället</button>` : ''}
         </div>`}
-    ${data.exercise.length ? data.exercise.map((e,i)=>
-      (state.editingTime && state.editingTime.type==='exercise' && state.editingTime.idx===i)
-        ? timeEditRow(e,i,'exercise') : entryRow(e,i,'exercise')).join('') : `<div class="empty">Ingen träning loggad</div>`}
+    ${(() => {
+      const shown = data.exercise.map((e,i)=>({e,i})).filter(x => !(inBaselineMode() && x.e.active));
+      return shown.length ? shown.map(({e,i}) =>
+        (state.editingTime && state.editingTime.type==='exercise' && state.editingTime.idx===i)
+          ? timeEditRow(e,i,'exercise') : entryRow(e,i,'exercise')).join('')
+        : `<div class="empty">Ingen träning loggad</div>`;
+    })()}
   `;
 
   document.getElementById('prevDay').onclick = () => { state.currentDate.setDate(state.currentDate.getDate()-1); renderContent(); };
@@ -718,6 +744,42 @@ async function renderDay(content){
   };
   const addExBtn = document.getElementById('addExercise');
   if(addExBtn) addExBtn.onclick = () => { state.openForm = 'exercise'; renderContent(); };
+
+  const activeInput = document.getElementById('activeKcal');
+  const activeSave = document.getElementById('saveActiveKcal');
+  if(activeInput && activeSave){
+    const commit = async () => {
+      const v = parseInt(String(activeInput.value).replace(/\D/g,''), 10);
+      data.exercise = data.exercise.filter(e => !e.estimated);
+      if(v > 0) data.exercise.push({ name: 'Aktiva kalorier', kcal: v, estimated: true, time: nowHM() });
+      sortByTime(data.exercise);
+      await saveDay(dateStr, data);
+      renderContent();
+    };
+    activeSave.onclick = commit;
+    activeInput.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); activeInput.blur(); commit(); } };
+  }
+
+  const actInput = document.getElementById('activeKcalInput');
+  const actSave = document.getElementById('activeKcalSave');
+  if(actInput && actSave){
+    const commit = async () => {
+      const v = parseInt(actInput.value.replace(/\D/g,''), 10);
+      // Aktiva kalorier ersätter både tidigare värde och en ev. uppskattning
+      data.exercise = data.exercise.filter(e => !e.active && !e.estimated);
+      if(v > 0) data.exercise.push({ name: 'Aktiva kalorier', kcal: v, active: true, time: nowHM() });
+      sortByTime(data.exercise);
+      await saveDay(dateStr, data);
+      renderContent();
+    };
+    actSave.onclick = commit;
+    actInput.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); actInput.blur(); commit(); } };
+    actInput.oninput = () => {
+      actInput.value = actInput.value.replace(/\D/g,'');
+      actSave.textContent = 'Spara';
+      actSave.classList.add('pending');
+    };
+  }
 
   const estDayBtn = document.getElementById('estimateDay');
   if(estDayBtn) estDayBtn.onclick = () => { state.openForm = 'dayEstimate'; renderContent(); };
@@ -748,8 +810,8 @@ async function renderDay(content){
     const saveAct = document.getElementById('saveActivity');
     if(saveAct) saveAct.onclick = async () => {
       const v = Number(slider.value) || 0;
-      data.exercise = data.exercise.filter(e => !e.estimated);
-      if(v > 0) data.exercise.push({ name: 'Vardagsaktivitet', kcal: v, estimated: true });
+      data.exercise = data.exercise.filter(e => !e.estimated && !e.active);
+      if(v > 0) data.exercise.push({ name: 'Vardagsaktivitet', kcal: v, estimated: true, time: nowHM() });
       await saveDay(dateStr, data);
       state.openForm = null;
       renderContent();
@@ -927,6 +989,17 @@ async function renderDay(content){
 
   const quickEstBtn = document.getElementById('quickEstBtn');
   if(quickEstBtn) quickEstBtn.onclick = () => estimateQuickMeal();
+
+  const quickPhotoBtn = document.getElementById('quickPhotoBtn');
+  const quickPhotoInput = document.getElementById('quickPhotoInput');
+  if(quickPhotoBtn && quickPhotoInput){
+    quickPhotoBtn.onclick = () => quickPhotoInput.click();
+    quickPhotoInput.onchange = () => {
+      const f = quickPhotoInput.files && quickPhotoInput.files[0];
+      if(f) estimateMealPhoto(f);
+      quickPhotoInput.value = '';
+    };
+  }
 
   content.querySelectorAll('.unit-btn').forEach(btn => {
     btn.onclick = () => {
@@ -1173,7 +1246,11 @@ function quickFoodForm(){
   const v = (k) => ed && ed[k] !== undefined ? ed[k] : '';
   return `
     <div class="row"><input id="fName" placeholder="T.ex. 2 ägg och en banan" value="${ed ? ed.name : ''}"></div>
-    <button class="estbtn" id="quickEstBtn" style="width:100%; margin-bottom:8px;">✨ Uppskatta hela måltiden</button>
+    <div style="display:flex; gap:6px; margin-bottom:8px;">
+      <button class="estbtn" id="quickEstBtn" style="flex:1;">✨ Uppskatta text</button>
+      <button class="estbtn" id="quickPhotoBtn" style="flex:1;">📸 Fota maten</button>
+    </div>
+    <input type="file" accept="image/*" capture="environment" id="quickPhotoInput" style="display:none">
     <div class="est-status" id="quickEstStatus"></div>
     <div class="fieldgrid">
       <div><label>Kcal</label><input id="fKcal" type="number" placeholder="0" value="${v('kcal')}"></div>
@@ -1191,6 +1268,53 @@ function quickFoodForm(){
       <button class="save" id="saveFood">${ed ? 'Spara ändringar' : 'Spara'}</button>
     </div>
   `;
+}
+
+async function estimateMealPhoto(file){
+  const statusEl = document.getElementById('quickEstStatus');
+  const btn = document.getElementById('quickPhotoBtn');
+  if(btn){ btn.disabled = true; btn.textContent = 'Analyserar…'; }
+  if(statusEl){ statusEl.style.color = 'var(--muted)'; statusEl.textContent = 'Läser bilden…'; }
+  try{
+    const base64 = await fileToBase64(file);
+    const data = await callAnthropic({
+      model: "claude-sonnet-4-6",
+      max_tokens: 600,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: file.type || 'image/jpeg', data: base64 } },
+          { type: "text", text: `Du är en näringsexpert. Identifiera maten på tallriken och uppskatta portionsstorlekar utifrån vad som syns (använd tallrik, bestick eller glas som storleksreferens om möjligt). Var realistisk om tillagning: anta att synligt fett, olja eller smör i stekt mat räknas med. Svara ENDAST med ett JSON-objekt, ingen markdown, inga kodstaket. Format exakt: {"namn": "kort beskrivning av måltiden", "kcal": number, "protein": number, "fat": number, "carbs": number, "delar": "vad du identifierat och vilka mängder du antagit", "osakerhet": "lag" | "medel" | "hog"}` }
+        ]
+      }]
+    });
+    const textBlock = (data.content || []).find(b => b.type === 'text');
+    if(!textBlock) throw new Error('Tomt svar från modellen');
+    const p = JSON.parse(textBlock.text.replace(/```json|```/g, '').trim());
+
+    const setVal = (id, v) => { const el = document.getElementById(id); if(el) el.value = v; };
+    const nameEl = document.getElementById('fName');
+    if(nameEl && !nameEl.value.trim() && p.namn) nameEl.value = p.namn;
+    setVal('fKcal', Math.round(Number(p.kcal) || 0));
+    setVal('fProtein', Math.round((Number(p.protein) || 0) * 10) / 10);
+    setVal('fFat', Math.round((Number(p.fat) || 0) * 10) / 10);
+    setVal('fCarbs', Math.round((Number(p.carbs) || 0) * 10) / 10);
+
+    if(statusEl){
+      const unc = { lag:'låg', medel:'medel', hog:'hög' }[p.osakerhet] || 'medel';
+      const warn = p.osakerhet === 'hog';
+      statusEl.style.color = warn ? 'var(--rust)' : 'var(--muted)';
+      statusEl.innerHTML = `${p.delar ? p.delar + ' ' : ''}<b>Osäkerhet: ${unc}.</b> Fotouppskattningar slår ofta 20–40 % fel — justera siffrorna om du vet bättre.`;
+    }
+  } catch(e){
+    console.error('Photo estimation failed', e);
+    if(statusEl){
+      statusEl.style.color = 'var(--rust)';
+      statusEl.textContent = 'Fel: ' + (e && e.message ? e.message : 'okänt fel') + '. Fyll i manuellt.';
+    }
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = '📸 Fota maten'; }
+  }
 }
 
 async function estimateQuickMeal(){
@@ -1234,7 +1358,7 @@ async function estimateQuickMeal(){
       statusEl.textContent = 'Fel: ' + (e && e.message ? e.message : 'okänt fel') + '. Fyll i manuellt.';
     }
   } finally {
-    if(btn){ btn.disabled = false; btn.textContent = '✨ Uppskatta hela måltiden'; }
+    if(btn){ btn.disabled = false; btn.textContent = '✨ Uppskatta text'; }
   }
 }
 
@@ -1440,6 +1564,22 @@ async function scanLabel(idx, file){
   }
 }
 
+/* Fast inmatningsrad för aktiva kalorier (baslinjeläge).
+   inputmode="numeric" ger numeriskt tangentbord på mobil. */
+function activeKcalRow(data){
+  const existing = data.exercise.find(e => e.estimated);
+  const val = existing ? existing.kcal : '';
+  return `<div class="activerow ${existing?'filled':''}">
+    <label for="activeKcal">Aktiva kalorier<small>från klockan, hela dagen</small></label>
+    <div class="activeinput">
+      <input id="activeKcal" type="text" inputmode="numeric" pattern="[0-9]*"
+        placeholder="0" value="${val}" enterkeyhint="done" autocomplete="off">
+      <span class="unit">kcal</span>
+      <button id="saveActiveKcal">${existing ? 'Uppdatera' : 'Spara'}</button>
+    </div>
+  </div>`;
+}
+
 function dayEstimatePanel(data){
   const bmr = calcBMR(currentWeightKg(), state.settings.height, state.settings.age, state.settings.sex);
   if(!bmr){
@@ -1452,7 +1592,7 @@ function dayEstimatePanel(data){
   }
   const t = dayTotals(data);
   const existing = data.exercise.find(e => e.estimated);
-  const otherBurned = data.exercise.filter(e => !e.estimated).reduce((s,e)=>s+Number(e.kcal||0),0);
+  const otherBurned = data.exercise.filter(e => !e.estimated && !e.active).reduce((s,e)=>s+Number(e.kcal||0),0);
   const start = existing ? Number(existing.kcal) : estimatedActivityKcal(1.3);
   const max = Math.round(bmr * 0.9);
   return `<div class="form">
@@ -1479,6 +1619,26 @@ function dayEstimatePanel(data){
     <div class="actions" style="margin-top:12px;">
       <button class="cancel" id="cancelForm">Avbryt</button>
       <button class="save" id="saveActivity">Spara</button>
+    </div>
+  </div>`;
+}
+
+/* Förinställd rad för aktiva kalorier (visas i baslinjeläge).
+   inputmode/pattern gör att mobilen visar sifferknappsats. */
+function activeKcalRow(data){
+  const existing = data.exercise.find(e => e.active);
+  const val = existing ? existing.kcal : '';
+  const saved = !!existing;
+  return `<div class="activerow ${saved?'filled':''}">
+    <div class="activelbl">
+      <b>Aktiva kalorier</b>
+      <small>${saved ? 'Från klockan · tryck för att ändra' : 'Läs av i Träning-appen'}</small>
+    </div>
+    <div class="activeinput">
+      <input id="activeKcalInput" type="text" inputmode="numeric" pattern="[0-9]*"
+        maxlength="4" placeholder="0" value="${val}" enterkeyhint="done">
+      <span class="unit">kcal</span>
+      <button id="activeKcalSave" class="activesave">${saved ? '✓' : 'Spara'}</button>
     </div>
   </div>`;
 }
@@ -1733,7 +1893,7 @@ function weightChangeBetween(fromYmd, toYmd){
 function kgFmt(n){ return String(n).replace('.', ','); }
 function signed(n, dec){
   const v = Number(n).toFixed(dec===undefined?1:dec);
-  return ((Number(v) > 0 ? '+' : '') + v).replace('.', ',');
+  return ((Number(v) > 0 ? '+' : '') + v).replace('.', ',').replace('-', '−');
 }
 
 async function renderWeek(content){
@@ -1855,6 +2015,129 @@ async function renderMonth(content){
   `;
   document.getElementById('prevMonth').onclick = () => { state.currentDate.setMonth(state.currentDate.getMonth()-1); renderContent(); };
   document.getElementById('nextMonth').onclick = () => { state.currentDate.setMonth(state.currentDate.getMonth()+1); renderContent(); };
+}
+
+/* ---------- ÅRSVY ---------- */
+const MONTH_SHORT = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
+
+function monthDiverging(months, maxAbs){
+  const W = 340, H = 150, padL = 34, padR = 6, padB = 18, padT = 10;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const top = Math.max(maxAbs, 1);
+  const step = niceStep(top);
+  const lim = Math.ceil(top/step)*step;
+  const mid = padT + plotH/2;
+  const y = v => mid - (v/lim)*(plotH/2);
+  const slot = plotW/12, bw = Math.min(18, slot*0.6);
+  const thisMonth = new Date().getMonth(), thisYear = new Date().getFullYear();
+
+  const grid = [];
+  for(let v = -lim; v <= lim; v += step){
+    if(v === 0) continue;
+    grid.push(`<line x1="${padL}" y1="${y(v)}" x2="${W-padR}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/>
+      <text x="${padL-6}" y="${y(v)+3.5}" text-anchor="end" class="axlbl">${Math.abs(v)>=1000?(v/1000)+'k':v}</text>`);
+  }
+
+  const bars = months.map((m,i) => {
+    const cx = padL + slot*i + slot/2;
+    if(!m.logged) return `<rect x="${cx-bw/2}" y="${mid-1.5}" width="${bw}" height="3" rx="1.5" fill="var(--line)"/>`;
+    const v = m.balance;
+    const h = Math.max(Math.abs(y(v) - mid), 2);
+    const isNow = m.year === thisYear && i === thisMonth;
+    return `<rect x="${cx-bw/2}" y="${v>=0?y(v):mid}" width="${bw}" height="${h}" rx="3"
+      fill="${v>=0?'var(--sage)':'var(--rust)'}" opacity="${isNow?1:.88}"/>
+      ${isNow?`<rect x="${cx-bw/2-1.5}" y="${(v>=0?y(v):mid)-1.5}" width="${bw+3}" height="${h+3}" rx="4"
+        fill="none" stroke="var(--ink)" stroke-width="1.2" opacity=".5"/>`:''}`;
+  });
+
+  const labels = months.map((m,i) => {
+    const cx = padL + slot*i + slot/2;
+    return `<text x="${cx}" y="${H-4}" text-anchor="middle" class="axlbl">${MONTH_SHORT[i][0].toUpperCase()}</text>`;
+  });
+
+  return `<svg class="netchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Kaloribalans per månad">
+    ${grid.join('')}
+    <line x1="${padL}" y1="${mid}" x2="${W-padR}" y2="${mid}" stroke="var(--muted)" stroke-width="1" opacity=".45"/>
+    <text x="${padL-6}" y="${mid+3.5}" text-anchor="end" class="axlbl">0</text>
+    ${bars.join('')}
+    ${labels.join('')}
+  </svg>`;
+}
+
+function renderYear(content){
+  const year = state.currentDate.getFullYear();
+  const goal = state.settings.dailyGoal;
+
+  const months = [];
+  let totalBalance = 0, totalLogged = 0, netSum = 0, proteinSum = 0, maxAbs = 0;
+  for(let m = 0; m < 12; m++){
+    const dim = new Date(year, m+1, 0).getDate();
+    let balance = 0, logged = 0, net = 0, protein = 0;
+    for(let d = 1; d <= dim; d++){
+      const day = state.cache[ymd(new Date(year, m, d))];
+      if(!day) continue;
+      const t = dayTotals(day);
+      if(t.intake <= 0) continue;
+      logged++; balance += goal - t.net; net += t.net; protein += t.protein;
+    }
+    months.push({ month:m, year, balance, logged, avgNet: logged?Math.round(net/logged):0 });
+    totalBalance += balance; totalLogged += logged; netSum += net; proteinSum += protein;
+    maxAbs = Math.max(maxAbs, Math.abs(balance));
+  }
+
+  const yearWeights = state.weights
+    .filter(w => w.date >= year+'-01-01' && w.date <= year+'-12-31')
+    .sort((a,b)=>a.date.localeCompare(b.date));
+  const kgChange = yearWeights.length >= 2 ? yearWeights[yearWeights.length-1].kg - yearWeights[0].kg : null;
+  const avgNet = totalLogged ? Math.round(netSum/totalLogged) : 0;
+  const avgProtein = totalLogged ? Math.round(proteinSum/totalLogged) : 0;
+  const deficit = totalBalance > 0;
+  const kgFromBalance = Math.abs(totalBalance)/7700;
+  const best = months.filter(m=>m.logged).sort((a,b)=>b.balance-a.balance)[0];
+
+  content.innerHTML = `
+    <div class="card">
+      <div class="datebar">
+        <button id="prevYear">‹</button>
+        <div class="label">${year}<small>${totalLogged} loggade dagar</small></div>
+        <button id="nextYear">›</button>
+      </div>
+      ${totalLogged ? `
+        <div class="balancehead">
+          <div>
+            <div class="k">Kaloribalans ${year}</div>
+            <div class="balanceval" style="color:${deficit?'var(--sage)':'var(--rust)'}">
+              ${deficit?'−':'+'}${Math.abs(totalBalance).toLocaleString('sv-SE')} kcal
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <div class="k">Motsvarar</div>
+            <div class="v" style="color:${deficit?'var(--sage)':'var(--rust)'}">${deficit?'−':'+'}${kgFromBalance.toFixed(1).replace('.',',')} kg</div>
+          </div>
+        </div>
+        ${monthDiverging(months, maxAbs)}
+        <div class="cmp-note" style="margin-top:2px;">
+          Staplar uppåt = underskott, nedåt = överskott. Varje månad räknas bara på de dagar du loggat.
+        </div>
+        <div class="summaryrow">
+          <div class="stat"><div class="k">Snitt netto/dag</div><div class="v">${avgNet}</div></div>
+          <div class="stat"><div class="k">Protein snitt</div><div class="v">${avgProtein} g</div></div>
+          <div class="stat ${kgChange!==null && kgChange<0?'sage':''}"><div class="k">Vikt i år</div><div class="v">${kgChange!==null?signed(kgChange,1)+' kg':'—'}</div></div>
+        </div>
+        ${best && best.balance > 0 ? `<div class="cmp-note">Bästa månaden: <b>${MONTH_SHORT[best.month]}</b> med ${best.balance.toLocaleString('sv-SE')} kcal underskott på ${best.logged} loggade dagar.</div>` : ''}
+      ` : `<div class="empty">Inga loggade dagar ${year} än.</div>`}
+    </div>
+
+    <div class="card">
+      <div class="sectitle" style="margin:0 0 8px 2px;">Viktutveckling ${year}</div>
+      ${yearWeights.length >= 2
+        ? `<svg class="weightgraph" viewBox="0 0 340 110">${weightSvg(yearWeights)}</svg>
+           <div class="cmp-note" style="margin-top:6px;">${kgFmt(yearWeights[0].kg)} kg → ${kgFmt(yearWeights[yearWeights.length-1].kg)} kg · ${yearWeights.length} mätningar</div>`
+        : `<div class="empty">Logga vikt minst två gånger under året för att se en kurva.</div>`}
+    </div>
+  `;
+  document.getElementById('prevYear').onclick = () => { state.currentDate.setFullYear(year-1); renderContent(); };
+  document.getElementById('nextYear').onclick = () => { state.currentDate.setFullYear(year+1); renderContent(); };
 }
 
 /* ---------- WEIGHT VIEW ---------- */
