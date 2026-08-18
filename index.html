@@ -227,7 +227,8 @@
     color:#8A6D2A; font-size:11.5px; font-weight:600; cursor:pointer; margin-bottom:8px;
   }
   .estbtn:disabled{opacity:.6; cursor:default;}
-  .est-status{font-size:11px; color:var(--rust); margin-bottom:6px; min-height:14px; line-height:1.4;}
+  .est-status{font-size:11px; color:var(--rust); line-height:1.4;}
+  .est-status:not(:empty){margin-bottom:10px;}
   .unitswitch{display:flex; gap:5px; margin-bottom:8px;}
   .unitswitch button{
     flex:1; border:1px solid var(--line); background:#fff; border-radius:7px;
@@ -301,6 +302,19 @@
   .copyday b{display:block; font-size:13.5px; color:var(--ink); font-weight:600;}
   .copyday small{display:block; font-size:11.5px; color:var(--muted); margin-top:1px;}
   .copyday .dtk{font-size:14px; font-weight:600; color:var(--rust); white-space:nowrap;}
+  .mealtypes{display:flex; gap:6px; margin:12px 0;}
+  .mtbtn{
+    flex:1; border:1px solid var(--line); background:#fff; border-radius:16px;
+    padding:9px 4px; font-size:12px; font-weight:600; color:var(--muted);
+    cursor:pointer; font-family:inherit; white-space:nowrap;
+    transition:background .12s, color .12s, border-color .12s;
+  }
+  .mtbtn.active{background:var(--sage); color:#fff; border-color:var(--sage);}
+  .mtag{
+    display:inline-block; font-size:10px; font-weight:600; color:var(--sage);
+    background:var(--sage-light); border-radius:4px; padding:1px 5px; margin-right:5px;
+    text-transform:uppercase; letter-spacing:.03em; vertical-align:1px;
+  }
   .mealrow{border-top:1px solid var(--line); padding:9px 0 7px;}
   .mealrow:first-of-type{border-top:none;}
   .mealrow-top{display:flex; justify-content:space-between; align-items:baseline; gap:8px;}
@@ -1546,7 +1560,7 @@ function quickFoodForm(){
     <div class="mealtypes">
       ${MEAL_TYPES.map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}
     </div>
-    <div style="display:flex; gap:6px; margin-bottom:8px;">
+    <div style="display:flex; gap:6px; margin:12px 0;">
       <button class="estbtn" id="quickEstBtn" style="flex:1;">✨ Uppskatta text</button>
       <button class="estbtn" id="quickPhotoBtn" style="flex:1;">📸 Fota maten</button>
     </div>
