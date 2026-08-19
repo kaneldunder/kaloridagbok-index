@@ -150,6 +150,8 @@
   button.etime:hover{border-color:var(--line);}
   button.etime.notime{color:var(--line);}
   .entry.timeedit{border-color:var(--ink); align-items:flex-end;}
+  .whenrow{display:flex; gap:6px; flex-wrap:wrap;}
+  .entry.timeedit input[type="date"],
   .entry.timeedit input[type="time"]{
     border:1px solid var(--line); border-radius:8px; padding:7px 9px;
     font-size:15px; font-family:inherit; background:#fff; color:var(--ink);
@@ -1143,13 +1145,32 @@ async function renderDay(content){
 
   const saveTimeBtn = document.getElementById('saveTime');
   if(saveTimeBtn) saveTimeBtn.onclick = async () => {
-    const val = document.getElementById('timeInput').value;
+    const newTime = document.getElementById('timeInput').value;
+    const newDate = document.getElementById('dateInput').value;
     const type = saveTimeBtn.dataset.type, i = Number(saveTimeBtn.dataset.idx);
-    if(val && data[type] && data[type][i]){
-      data[type][i].time = val;
-      data[type].sort((a,b) => (a.time||'99:99').localeCompare(b.time||'99:99'));
+    if(!data[type] || !data[type][i]){ state.editingTime = null; renderContent(); return; }
+
+    const entry = data[type][i];
+    if(newTime) entry.time = newTime;
+
+    if(newDate && newDate !== dateStr){
+      // Flytta posten till en annan dag
+      data[type].splice(i, 1);
+      const target = state.cache[newDate] || { food: [], exercise: [] };
+      target[type].push(entry);
+      sortByTime(target[type]);
+      state.cache[newDate] = target;
+      sortByTime(data[type]);
       await saveDay(dateStr, data);
+      await saveDay(newDate, target);
+      state.editingTime = null;
+      noteSync(true, 'Flyttad till ' + newDate);
+      renderContent();
+      return;
     }
+
+    sortByTime(data[type]);
+    await saveDay(dateStr, data);
     state.editingTime = null;
     renderContent();
   };
@@ -1301,8 +1322,10 @@ async function renderDay(content){
 
   content.querySelectorAll('.mtbtn').forEach(b => {
     b.onclick = () => {
+      // Växla markeringen på plats — omrendering skulle radera det man skrivit
       state.mealType = state.mealType === b.dataset.mt ? null : b.dataset.mt;
-      renderContent();
+      content.querySelectorAll('.mtbtn').forEach(x =>
+        x.classList.toggle('active', x.dataset.mt === state.mealType));
     };
   });
 
@@ -1499,9 +1522,12 @@ function macroSplit(t){
 
 function timeEditRow(item, idx, type){
   return `<div class="entry ${type} timeedit">
-    <div style="flex:1;">
-      <div class="sub" style="margin-bottom:5px;">Tid för "${item.name}"</div>
-      <input type="time" id="timeInput" value="${item.time || nowHM()}">
+    <div style="flex:1; min-width:0;">
+      <div class="sub" style="margin-bottom:6px;">När åt du "${item.name}"?</div>
+      <div class="whenrow">
+        <input type="date" id="dateInput" value="${ymd(state.currentDate)}">
+        <input type="time" id="timeInput" value="${item.time || nowHM()}">
+      </div>
     </div>
     <div class="right">
       <button class="confirmbtn no" id="cancelTime">Avbryt</button>
