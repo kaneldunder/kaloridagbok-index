@@ -555,6 +555,48 @@ function parseAmountFromName(text){
   return null;
 }
 
+/* Som parseAmountFromName men klarar även efterställd mängd: "Grekisk yoghurt 125 g". */
+function parseQuantityAnywhere(text){
+  const t = (text||'').trim();
+  if(!t) return null;
+  const lead = parseAmountFromName(t);
+  if(lead) return lead;
+  const m = t.match(/^(.*?)[\s,]*(\d+(?:[.,]\d+)?)\s*(kg|hg|gram|gr|g|st|stycken|styck|dl|cl|ml|l|msk|tsk)\.?$/i);
+  if(!m) return null;
+  const name = m[1].trim();
+  if(!name) return null;
+  const flipped = m[2] + ' ' + m[3] + ' ' + name;
+  const parsed = parseAmountFromName(flipped);
+  return parsed ? { ...parsed, name } : null;
+}
+
+/* Slår upp fritext mot biblioteket. Klarar flera delar: "2 ägg och 125 g yoghurt". */
+function pantryLookupFromText(text){
+  const parts = (text||'').split(/\s*(?:,|\boch\b|\+|&)\s*/i).map(x=>x.trim()).filter(Boolean);
+  if(!parts.length) return null;
+  const items = [];
+  for(const part of parts){
+    const q = parseQuantityAnywhere(part);
+    const nameGuess = q ? q.name : part;
+    const entry = findInPantry(nameGuess) || findInPantry(part);
+    if(!entry) return null;                     // en okänd del → låt AI:n ta hela
+    const unit = entry.unit;
+    let amount;
+    if(q && ((q.unit === 'st') === (unit === 'st'))) amount = q.amount;
+    else amount = Number(entry.portion) || (unit === 'st' ? 1 : 100);
+    items.push({ entry, amount, unit });
+  }
+  const tot = items.reduce((a,it) => {
+    const f = it.unit === 'st' ? it.amount : it.amount/100;
+    a.kcal += f * (Number(it.entry.kcalPer100)||0);
+    a.protein += f * (Number(it.entry.proteinPer100)||0);
+    a.fat += f * (Number(it.entry.fatPer100)||0);
+    a.carbs += f * (Number(it.entry.carbsPer100)||0);
+    return a;
+  }, {kcal:0,protein:0,fat:0,carbs:0});
+  return { items, totals: tot };
+}
+
 function pantrySorted(query){
   const q = normName(query || '');
   return state.pantry
@@ -1920,6 +1962,25 @@ async function estimateQuickMeal(){
     if(statusEl){ statusEl.style.color = 'var(--rust)'; statusEl.textContent = 'Beskriv måltiden först, t.ex. "2 ägg och en banan".'; }
     return;
   }
+  // Kolla biblioteket först — exakta värden slår en uppskattning, och kostar inget
+  const hit = pantryLookupFromText(desc);
+  if(hit){
+    const t = hit.totals;
+    const setV = (id,v) => { const e=document.getElementById(id); if(e) e.value=v; };
+    setV('fKcal', Math.round(t.kcal));
+    setV('fProtein', Math.round(t.protein*10)/10);
+    setV('fFat', Math.round(t.fat*10)/10);
+    setV('fCarbs', Math.round(t.carbs*10)/10);
+    if(statusEl){
+      statusEl.style.color = 'var(--sage)';
+      statusEl.textContent = '✓ Från ditt bibliotek: ' + hit.items
+        .map(i => `${i.amount}${i.unit==='st'?' st':' g'} ${i.entry.name}`).join(' + ');
+    }
+    hit.items.forEach(i => { i.entry.lastUsed = Date.now(); });
+    ghSaveBundle();
+    return;
+  }
+
   if(btn){ btn.disabled = true; btn.textContent = 'Uppskattar…'; }
   if(statusEl) statusEl.textContent = '';
   try{
@@ -2007,7 +2068,7 @@ function ingredientRow(row, idx){
       <button class="estbtn" id="scanBtn_${idx}" data-idx="${idx}" style="flex:1;">📷 Skanna etikett</button>
     </div>
     <input type="file" accept="image/*" capture="environment" class="scan-input" data-idx="${idx}" style="display:none">
-    <div class="est-status" id="estStatus_${idx}" ${row.note ? 'style="color:var(--muted)"' : ''}>${row.note || ''}</div>
+    <div class="est-status" id="estStatus_${idx}" ${row.note ? `style="color:${row.note.startsWith('✓')?'var(--sage)':'var(--muted)'}"` : ''}>${row.note || ''}</div>
     <div class="fieldgrid">
       <div><label>${isSt ? 'Antal (st)' : 'Mängd (g)'}</label>
         <input class="ing-amount" data-idx="${idx}" type="number" step="${isSt?'0.5':'1'}" value="${row.amount}">
@@ -2073,11 +2134,26 @@ async function estimateIngredient(idx){
     if(statusEl){ statusEl.style.color = 'var(--rust)'; statusEl.textContent = 'Skriv in ett livsmedel först.'; }
     return;
   }
+  const raw0 = row.name.trim();
+  // Biblioteket först: exakta värden och inget API-anrop
+  const q0 = parseQuantityAnywhere(raw0);
+  const hit0 = findInPantry(q0 ? q0.name : raw0) || findInPantry(raw0);
+  if(hit0){
+    row.name = hit0.name;
+    applyPantryToRow(idx, hit0);
+    if(q0 && ((q0.unit === 'st') === (hit0.unit === 'st'))) row.amount = q0.amount;
+    hit0.lastUsed = Date.now();
+    row.note = '✓ Från ditt bibliotek';
+    renderContent();
+    ghSaveBundle();
+    return;
+  }
+
   const btn = document.getElementById('estBtn_' + idx);
   if(btn){ btn.disabled = true; btn.textContent = 'Uppskattar…'; }
   if(statusEl) statusEl.textContent = '';
   try{
-    const raw = row.name.trim();
+    const raw = raw0;
     const data = await callAnthropic({
       model: "claude-sonnet-4-6",
       max_tokens: 400,
