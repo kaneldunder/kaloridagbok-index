@@ -437,6 +437,7 @@ let state = {
   mealType: null,
   pantryQuery: '',
   pickerOpen: false,
+  pantryEdit: null,
   skippedDays: [],
   lastSync: null,
   gh: { owner: '', repo: '', token: '', path: 'kaloridagbok-data.json', branch: 'main', sha: null },
@@ -528,6 +529,32 @@ async function savePantryItem(row){
   await ghSaveBundle();
 }
 /* Sorterad lista: senast använda först, sedan alfabetiskt. */
+/* Läser ut mängd ur fritext: "40 g gurka", "2 ägg", "1,5 dl grädde".
+   Returnerar null om ingen mängd hittas. */
+function parseAmountFromName(text){
+  const t = (text || '').trim();
+  if(!t) return null;
+  const m = t.match(/^(\d+(?:[.,]\d+)?)\s*(kg|hg|gram|gr|g|st|stycken|styck|dl|cl|ml|l|msk|tsk|kkp|kopp|skiva|skivor|näve|nävar)?\b\s*(.*)$/i);
+  if(!m) return null;
+  const num = parseFloat(m[1].replace(',', '.'));
+  if(!isFinite(num) || num <= 0) return null;
+  const unitWord = (m[2] || '').toLowerCase();
+  let rest = (m[3] || '').trim();
+  // Ta bort inledande "av"/"med"
+  rest = rest.replace(/^(av|med)\s+/i, '');
+  const gramFactors = { kg:1000, hg:100, gram:1, gr:1, g:1 };
+  const volFactors  = { dl:100, cl:10, ml:1, l:1000, msk:15, tsk:5, kkp:240, kopp:240 };
+  if(unitWord in gramFactors)
+    return { amount: Math.round(num * gramFactors[unitWord]), unit:'g', name: rest || t, exact:true };
+  if(unitWord in volFactors)
+    return { amount: Math.round(num * volFactors[unitWord]), unit:'g', name: rest || t, exact:false };
+  if(['st','stycken','styck','skiva','skivor','näve','nävar'].includes(unitWord))
+    return { amount: num, unit:'st', name: rest || t, exact:true };
+  // Enbart siffra + livsmedel, t.ex. "2 ägg"
+  if(!unitWord && rest) return { amount: num, unit:'st', name: rest, exact:true };
+  return null;
+}
+
 function pantrySorted(query){
   const q = normName(query || '');
   return state.pantry
@@ -538,6 +565,42 @@ function pantryPortionKcal(p){
   const amt = Number(p.portion) || (p.unit==='st' ? 1 : 100);
   return Math.round((p.unit==='st' ? amt : amt/100) * (Number(p.kcalPer100)||0));
 }
+/* Formulär för att lägga till/ändra livsmedel direkt i biblioteket. */
+function pantryEditForm(){
+  const r = state.pantryEdit;
+  const isSt = r.unit === 'st';
+  const u = isSt ? '/ st' : '/ 100g';
+  return `<div class="form" style="margin-bottom:12px;">
+    <div class="row"><input id="peName" placeholder="Namn, t.ex. Grekisk yoghurt" value="${(r.name||'').replace(/"/g,'&quot;')}"></div>
+    <div class="unitswitch">
+      <button class="pe-unit ${!isSt?'active':''}" data-unit="g">Gram</button>
+      <button class="pe-unit ${isSt?'active':''}" data-unit="st">Styck</button>
+    </div>
+    <div style="display:flex; gap:6px; margin:10px 0;">
+      <button class="estbtn" id="peEst" style="flex:1;">✨ Uppskatta</button>
+      <button class="estbtn" id="peScanBtn" style="flex:1;">📷 Skanna etikett</button>
+    </div>
+    <input type="file" accept="image/*" capture="environment" id="peScanInput" style="display:none">
+    <div class="est-status" id="peStatus"></div>
+    <div class="fieldgrid">
+      <div><label>Standardportion (${isSt?'st':'g'})</label><input id="pePortion" type="number" step="${isSt?'0.5':'1'}" value="${r.portion}"></div>
+      <div><label>Kcal ${u}</label><input id="peKcal" type="number" value="${r.kcalPer100}"></div>
+    </div>
+    <div class="fieldgrid">
+      <div><label>Protein ${u}</label><input id="peProtein" type="number" value="${r.proteinPer100}"></div>
+      <div><label>Fett ${u}</label><input id="peFat" type="number" value="${r.fatPer100}"></div>
+    </div>
+    <div class="fieldgrid">
+      <div><label>Kolhydrater ${u}</label><input id="peCarbs" type="number" value="${r.carbsPer100}"></div>
+      <div></div>
+    </div>
+    <div class="actions" style="margin-top:8px;">
+      <button class="cancel" id="peCancel">Avbryt</button>
+      <button class="save" id="peSave">${r.index === null ? 'Lägg till' : 'Spara ändringar'}</button>
+    </div>
+  </div>`;
+}
+
 function pantryPicker(){
   const list = pantrySorted(state.pantryQuery);
   return `<div class="pickerbox">
@@ -578,7 +641,8 @@ function updateMealTotalsDOM(){
   if(carbsEl) carbsEl.textContent = Math.round(t.carbs) + 'g';
   state.mealBuilder.forEach((row, i) => {
     const subEl = document.getElementById('ingSub_' + i);
-    if(subEl) subEl.textContent = '≈ ' + ingredientSubKcal(row) + ' kcal';
+    if(subEl) subEl.textContent = (Number(row.amount)||0) + (row.unit === 'st' ? ' st' : ' g')
+      + ' ≈ ' + ingredientSubKcal(row) + ' kcal';
     const pb = document.getElementById('pantryBtn_' + i);
     if(pb){
       const canSave = row.name && row.name.trim() && Number(row.kcalPer100) > 0;
@@ -1332,7 +1396,9 @@ async function renderDay(content){
 
   const saveFoodBtn = document.getElementById('saveFood');
   if(saveFoodBtn) saveFoodBtn.onclick = async () => {
-    const name = document.getElementById('fName').value.trim();
+    // Namn valfritt: faller tillbaka på måltidstypen
+    const name = document.getElementById('fName').value.trim()
+      || mealTypeLabel(state.mealType) || '';
     const kcal = Number(document.getElementById('fKcal').value) || 0;
     const protein = Number(document.getElementById('fProtein').value) || 0;
     const fat = Number(document.getElementById('fFat').value) || 0;
@@ -1509,7 +1575,17 @@ async function renderDay(content){
         const idx = Number(input.dataset.idx);
         const key = fieldMap[cls];
         state.mealBuilder[idx][key] = input.value;
+        if(key === 'amount' || key === 'name') state.mealBuilder[idx].note = null;
         if(key === 'name'){
+          // Skriver man "40 g gurka" ska mängdfältet följa med direkt
+          const q = parseAmountFromName(input.value);
+          if(q && q.exact){
+            const amtEl = content.querySelector(`.ing-amount[data-idx="${idx}"]`);
+            if(amtEl && Number(amtEl.value) !== q.amount){
+              state.mealBuilder[idx].amount = q.amount;
+              amtEl.value = q.amount;
+            }
+          }
           const hit = findInPantry(input.value);
           if(hit){
             applyPantryToRow(idx, hit);
@@ -1542,7 +1618,10 @@ async function renderDay(content){
     if(!components.length) return;
     const t = computeMealTotals();
     const nameInput = document.getElementById('buildMealName').value.trim();
-    const name = nameInput || components.map(c => c.name).join(', ');
+    // Namn är valfritt: måltidstypen först, annars ingredienserna
+    const name = nameInput
+      || mealTypeLabel(state.mealType)
+      || components.map(c => c.name).join(', ');
     const entry = {
       name,
       kcal: Math.round(t.kcal),
@@ -1550,7 +1629,7 @@ async function renderDay(content){
       fat: Math.round(t.fat),
       carbs: Math.round(t.carbs),
       components,
-      time: timeForEntry(nameInput || comps.map(x=>x.name).join(', '), state.mealType),
+      time: timeForEntry(name, state.mealType),
       ...(state.mealType ? { mealType: state.mealType } : {})
     };
     if(state.editingFav !== null){
@@ -1757,7 +1836,7 @@ function quickFoodForm(){
   const ed = state.editingFav !== null ? state.favorites[state.editingFav] : null;
   const v = (k) => ed && ed[k] !== undefined ? ed[k] : '';
   return `
-    <div class="row"><input id="fName" placeholder="T.ex. 2 ägg och en banan" value="${ed ? ed.name : ''}"></div>
+    <div class="row"><input id="fName" placeholder="Vad åt du? (valfritt om du valt måltidstyp)" value="${ed ? ed.name : ''}"></div>
     <div class="mealtypes">
       ${MEAL_TYPES.map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}
     </div>
@@ -1880,7 +1959,7 @@ async function estimateQuickMeal(){
 function buildMealForm(){
   const t = computeMealTotals();
   return `
-        <div class="row"><input id="buildMealName" placeholder="Namn på måltiden (valfritt)" value="${state.editingFav !== null && state.favorites[state.editingFav] ? state.favorites[state.editingFav].name : ''}"></div>
+        <div class="row"><input id="buildMealName" placeholder="Namn (valfritt — annars måltidstypen)" value="${state.editingFav !== null && state.favorites[state.editingFav] ? state.favorites[state.editingFav].name : ''}"></div>
     <div class="mealtypes">
       ${MEAL_TYPES.map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}
     </div>
@@ -1928,7 +2007,7 @@ function ingredientRow(row, idx){
       <button class="estbtn" id="scanBtn_${idx}" data-idx="${idx}" style="flex:1;">📷 Skanna etikett</button>
     </div>
     <input type="file" accept="image/*" capture="environment" class="scan-input" data-idx="${idx}" style="display:none">
-    <div class="est-status" id="estStatus_${idx}"></div>
+    <div class="est-status" id="estStatus_${idx}" ${row.note ? 'style="color:var(--muted)"' : ''}>${row.note || ''}</div>
     <div class="fieldgrid">
       <div><label>${isSt ? 'Antal (st)' : 'Mängd (g)'}</label>
         <input class="ing-amount" data-idx="${idx}" type="number" step="${isSt?'0.5':'1'}" value="${row.amount}">
@@ -1948,7 +2027,7 @@ function ingredientRow(row, idx){
     </div>
     <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:4px;">
       <button class="pantrybtn" id="pantryBtn_${idx}" data-idx="${idx}" ${canSave?'':'style="visibility:hidden;"'}>${saved?'✓ I mitt bibliotek':'💾 Spara livsmedel'}</button>
-      <div class="sub" id="ingSub_${idx}">≈ ${ingredientSubKcal(row)} kcal</div>
+      <div class="sub" id="ingSub_${idx}">${Number(row.amount)||0}${isSt?' st':' g'} ≈ ${ingredientSubKcal(row)} kcal</div>
     </div>
   </div>`;
 }
@@ -1991,45 +2070,49 @@ async function estimateIngredient(idx){
   const row = state.mealBuilder[idx];
   const statusEl = document.getElementById('estStatus_' + idx);
   if(!row || !row.name || !row.name.trim()){
-    if(statusEl) statusEl.textContent = 'Skriv in ett livsmedel först.';
+    if(statusEl){ statusEl.style.color = 'var(--rust)'; statusEl.textContent = 'Skriv in ett livsmedel först.'; }
     return;
   }
   const btn = document.getElementById('estBtn_' + idx);
   if(btn){ btn.disabled = true; btn.textContent = 'Uppskattar…'; }
   if(statusEl) statusEl.textContent = '';
   try{
-    const perPiece = row.unit === 'st';
-    const prompt = perPiece
-      ? `Du är en näringsdatabas. Uppskatta näringsinnehållet för EN (1) normalstor portion/enhet av: "${row.name}". Utgå från en typisk svensk normalstorlek (t.ex. 1 medelstor banan ≈ 120 g ätlig del, 1 korv med bröd = korv + bröd inkl. vanliga tillbehör). Anta vanligast förekommande beredning. Svara ENDAST med ett JSON-objekt, inga förklaringar, ingen markdown, inga kodstaket. Fälten avser innehållet PER STYCK. Format exakt: {"kcalPer100": number, "proteinPer100": number, "fatPer100": number, "carbsPer100": number, "antagenVikt": "kort text, t.ex. 1 medelstor banan ca 120 g"}`
-      : `Du är en näringsdatabas. Ge en realistisk uppskattning av näringsinnehåll per 100 gram för livsmedlet: "${row.name}". Anta vanligast förekommande beredning/tillagningssätt om inget annat anges. Svara ENDAST med ett JSON-objekt, inga förklaringar, ingen markdown, inga kodstaket. Format exakt: {"kcalPer100": number, "proteinPer100": number, "fatPer100": number, "carbsPer100": number}`;
+    const raw = row.name.trim();
     const data = await callAnthropic({
       model: "claude-sonnet-4-6",
-      max_tokens: 300,
-      messages: [{ role: "user", content: prompt }]
+      max_tokens: 400,
+      messages: [{
+        role: "user",
+        content: `Du är en näringsdatabas. Texten kan innehålla en mängd: "${raw}".
+Dela upp den i mängd och livsmedel. Välj enhet "g" för sådant som vägs och "st" för sådant som räknas
+(ägg, frukt, portionsbröd, korv med bröd). Vardagsmått som dl, msk och skivor räknas om till gram.
+Anges ingen mängd, föreslå en normal portion.
+Näringsvärdena ska avse PER 100 GRAM om enheten är "g", och PER STYCK om enheten är "st".
+Svara ENDAST med ett JSON-objekt, ingen markdown, inga kodstaket. Format exakt:
+{"namn": string (livsmedlet utan mängd), "unit": "g" | "st", "amount": number, "kcalPer100": number, "proteinPer100": number, "fatPer100": number, "carbsPer100": number, "antagande": string (kort, t.ex. "1 dl ≈ 100 g")}`
+      }]
     });
     const textBlock = (data.content || []).find(b => b.type === 'text');
     if(!textBlock) throw new Error('Tomt svar från modellen');
-    const cleaned = textBlock.text.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(cleaned);
+    const parsed = JSON.parse(textBlock.text.replace(/```json|```/g, '').trim());
+
+    // Lokal tolkning vinner när den är exakt ("40 g"), annars modellens
+    const local = parseAmountFromName(raw);
+    const useLocal = local && local.exact;
+    row.unit = useLocal ? local.unit : (parsed.unit === 'st' ? 'st' : 'g');
+    const amt = useLocal ? local.amount : Number(parsed.amount);
+    if(isFinite(amt) && amt > 0) row.amount = amt;
+    if(parsed.namn) row.name = String(parsed.namn).trim();
 
     row.kcalPer100 = Math.round(Number(parsed.kcalPer100) || 0);
     row.proteinPer100 = Math.round((Number(parsed.proteinPer100) || 0) * 10) / 10;
     row.fatPer100 = Math.round((Number(parsed.fatPer100) || 0) * 10) / 10;
     row.carbsPer100 = Math.round((Number(parsed.carbsPer100) || 0) * 10) / 10;
-
-    const setVal = (cls, val) => {
-      const el = document.querySelector(`.${cls}[data-idx="${idx}"]`);
-      if(el) el.value = val;
-    };
-    setVal('ing-kcal', row.kcalPer100);
-    setVal('ing-protein', row.proteinPer100);
-    setVal('ing-fat', row.fatPer100);
-    setVal('ing-carbs', row.carbsPer100);
-    updateMealTotalsDOM();
-    if(statusEl){
-      statusEl.style.color = 'var(--muted)';
-      statusEl.textContent = perPiece && parsed.antagenVikt ? 'Antagande: ' + parsed.antagenVikt : '';
-    }
+    row.portion = null;
+    const extra = !useLocal && parsed.antagande ? ' · ' + parsed.antagande : '';
+    row.note = `Tolkat som ${row.amount}${row.unit === 'st' ? ' st' : ' g'} ${row.name}${extra}`;
+    // Enhet och etiketter kan ha ändrats — rita om raden
+    renderContent();
   } catch(e){
     console.error('Estimation failed', e);
     if(statusEl){
@@ -2037,7 +2120,8 @@ async function estimateIngredient(idx){
       statusEl.textContent = 'Fel: ' + (e && e.message ? e.message : 'okänt fel') + '. Fyll i manuellt.';
     }
   } finally {
-    if(btn){ btn.disabled = false; btn.textContent = '✨ Uppskatta'; }
+    const b2 = document.getElementById('estBtn_' + idx);
+    if(b2){ b2.disabled = false; b2.textContent = '✨ Uppskatta'; }
   }
 }
 
@@ -2281,9 +2365,10 @@ function balanceBlock(results, goal, periodWord){
       ${balanceCurve(points, logged.length)}
       <div class="cmp-note">
         ${deficit
-          ? `Ett samlat underskott på ${Math.abs(total).toLocaleString('sv-SE')} kcal motsvarar ca ${kg.toFixed(2).replace('.',',')} kg fett.`
-          : `Ett samlat överskott på ${Math.abs(total).toLocaleString('sv-SE')} kcal motsvarar ca ${kg.toFixed(2).replace('.',',')} kg.`}
+          ? `Du ligger ${Math.abs(total).toLocaleString('sv-SE')} kcal under ditt mål — alltså före planen.`
+          : `Du ligger ${Math.abs(total).toLocaleString('sv-SE')} kcal över ditt mål — alltså efter planen.`}
         Räknas bara på de ${logged.length} dagar du loggat.
+        Förväntad fettförlust står längre ned.
       </div>
     </div>`;
 }
@@ -2326,6 +2411,7 @@ function comparisonBlock(st, actualKg, periodWord){
   if(!st.logged) return '';
   const theory = -st.predictedKg; // negativt = nedgång
   const theoryTxt = signed(theory, 2) + ' kg';
+  const perDay = Math.round(st.totalVsMaintenance / st.logged);
   let actualTxt = '—', note;
   if(actualKg === null){
     note = 'Logga vikt i början och slutet av ' + periodWord + ' för att kunna jämföra.';
@@ -2333,23 +2419,46 @@ function comparisonBlock(st, actualKg, periodWord){
     actualTxt = signed(actualKg, 1) + ' kg';
     const diff = Math.abs(actualKg - theory);
     if(st.logged < st.total){
-      note = 'Obs: bara ' + st.logged + ' av ' + st.total + ' dagar loggade, så underskottet är sannolikt underskattat.';
+      note = 'Obs: bara ' + st.logged + ' av ' + st.total + ' dagar loggade, så siffran bygger på ofullständig data.';
     } else if(diff < 0.4){
-      note = 'Stämmer väl överens.';
+      note = 'Stämmer väl överens — din loggning och din uppskattade förbrukning verkar träffa rätt.';
     } else if(actualKg > theory){
       note = 'Vikten sjönk mindre än beräknat — vanligt vid vätskeretention, eller så är portionerna större än uppskattat.';
     } else {
-      note = 'Vikten sjönk mer än beräknat — ofta vätske- eller glykogenförlust snarare än enbart fett.';
+      note = 'Vikten sjönk mer än beräknat — ofta vätske- eller glykogenförlust, särskilt de första veckorna.';
     }
   }
   return `
     <div class="compare">
       <div class="cmp-row">
-        <div><div class="k">Beräknat av underskott</div><div class="v">${theoryTxt}</div></div>
+        <div><div class="k">Beräknad fettförlust</div><div class="v">${theoryTxt}</div></div>
         <div><div class="k">Faktisk viktförändring</div><div class="v">${actualTxt}</div></div>
       </div>
+      ${st.maintenance ? `<div class="cmp-note">
+        Räknat mot din uppskattade förbrukning på ${st.maintenance} kcal/dag —
+        underskottet blir i snitt ${perDay > 0 ? '−' : '+'}${Math.abs(perDay)} kcal/dag.
+      </div>` : `<div class="cmp-note">
+        Fyll i längd och ålder under Inställningar för en mer träffsäker beräkning.
+      </div>`}
       <div class="cmp-note">${note}</div>
     </div>`;
+}
+
+/* Uppskattad vardagsaktivitet när klockan inte används.
+   Bygger på samma faktorer som målberäkningen: aktiv del = BMR × (faktor − 1). */
+const DAY_TYPES = [
+  { key:'lugn',   label:'Lugn dag',    hint:'mest stillasittande',             factor:1.2  },
+  { key:'vanlig', label:'Vanlig dag',  hint:'en del rörelse',                  factor:1.3  },
+  { key:'rorlig', label:'Rörlig dag',  hint:'på fötter större delen av dagen', factor:1.45 },
+  { key:'tung',   label:'Tung dag',    hint:'fysiskt krävande',                factor:1.6  }
+];
+function estimatedActivityKcal(factor){
+  const bmr = calcBMR(currentWeightKg(), state.settings.height, state.settings.age, state.settings.sex);
+  if(!bmr) return null;
+  return Math.round(bmr * (factor - 1));
+}
+function inBaselineMode(){
+  return Number(state.settings.activity) <= 1.0;
 }
 
 /* ---- Energibehov (Mifflin-St Jeor) ---- */
@@ -2362,6 +2471,22 @@ function calcBMR(weight, height, age, sex){
   const base = 10*weight + 6.25*height - 5*age;
   return Math.round(sex === 'kvinna' ? base - 161 : base + 5);
 }
+function goalSuggestion(){
+  const s = state.settings;
+  const w = currentWeightKg();
+  const bmr = calcBMR(w, s.height, s.age, s.sex);
+  if(!bmr) return null;
+  const act = Number(s.activity) || 1.3;
+  const tdee = Math.round(bmr * act);
+  const deficit = Number(s.deficit)||0;
+  const target = tdee - deficit;
+  const baselineMode = act <= 1.0;
+  return {
+    weight: w, bmr, tdee, deficit, target, act, baselineMode,
+    kgPerWeek: (deficit * 7 / 7700),
+    tooLow: baselineMode ? (target < 1200) : (target < 1500)
+  };
+}
 /* Proteinmål räknas på MÅLVIKT, inte nuvarande — annars blir siffran orimlig vid övervikt.
    Fett har ett golv, inte ett mål. Kolhydrater lämnas fria. */
 function macroTargets(){
@@ -2373,41 +2498,6 @@ function macroTargets(){
     protein: Math.round(tw * 1.8),
     fatFloor: Math.round(tw * 0.6)
   };
-}
-
-function goalSuggestion(){
-  const s = state.settings;
-  const w = currentWeightKg();
-  const bmr = calcBMR(w, s.height, s.age, s.sex);
-  if(!bmr) return null;
-  const act = Number(s.activity) || 1.3;
-  const tdee = Math.round(bmr * act);
-  const deficit = Number(s.deficit)||0;
-  const target = tdee - deficit;
-  const baselineMode = act <= 1.0;  // klockan/loggad träning står för allt aktivt
-  return {
-    weight: w, bmr, tdee, deficit, target, act, baselineMode,
-    kgPerWeek: (deficit * 7 / 7700),
-    // Vid baslinjeläge är målet inte vad du äter — träning läggs på ovanpå.
-    tooLow: baselineMode ? (target < 1200) : (target < 1500)
-  };
-}
-
-/* Uppskattad vardagsaktivitet när klockan inte används.
-   Bygger på samma faktorer som målberäkningen: aktiv del = BMR × (faktor − 1). */
-const DAY_TYPES = [
-  { key:'lugn',   label:'Lugn dag',    hint:'mest stillasittande',            factor:1.2  },
-  { key:'vanlig', label:'Vanlig dag',  hint:'en del rörelse',                 factor:1.3  },
-  { key:'rorlig', label:'Rörlig dag',  hint:'på fötter större delen av dagen',factor:1.45 },
-  { key:'tung',   label:'Tung dag',    hint:'fysiskt krävande',               factor:1.6  }
-];
-function estimatedActivityKcal(factor){
-  const bmr = calcBMR(currentWeightKg(), state.settings.height, state.settings.age, state.settings.sex);
-  if(!bmr) return null;
-  return Math.round(bmr * (factor - 1));
-}
-function inBaselineMode(){
-  return Number(state.settings.activity) <= 1.0;
 }
 
 /* Statistik för en period. 7700 kcal ≈ 1 kg kroppsfett. */
@@ -2425,11 +2515,19 @@ function periodStats(results, goal){
   const avgProtein = logged.length ? Math.round(logged.reduce((s,r)=>s+r.totals.protein,0)/logged.length) : 0;
   const totalBurned = results.reduce((s,r)=>s+r.totals.burned,0);
   const daysUnder = logged.filter(r => r.totals.net <= goal).length;
-  // Ackumulerat underskott räknas bara på loggade dagar
+  // Balans mot MÅLET — visar om du håller planen
   const totalDeficit = logged.reduce((s,r)=>s+(goal - r.totals.net), 0);
-  const predictedKg = totalDeficit / 7700;
+  // Förväntad viktnedgång måste räknas mot FÖRBRUKNINGEN, inte mot målet.
+  // Målet innehåller redan ett planerat underskott, annars underskattas nedgången.
+  const sug = goalSuggestion();
+  const maintenance = sug ? sug.tdee : null;
+  const totalVsMaintenance = maintenance
+    ? logged.reduce((s,r)=>s+(maintenance - r.totals.net), 0)
+    : totalDeficit;
+  const predictedKg = totalVsMaintenance / 7700;
   return { logged: logged.length, total: results.length, avgNet, avgProtein,
-           totalBurned, daysUnder, totalDeficit, predictedKg };
+           totalBurned, daysUnder, totalDeficit, predictedKg,
+           maintenance, totalVsMaintenance };
 }
 /* Faktisk viktförändring inom ett datumintervall (ISO-strängar). */
 function weightChangeBetween(fromYmd, toYmd){
@@ -2902,16 +3000,24 @@ function renderSettings(content){
     <div class="sectitle">Mitt livsmedelsbibliotek</div>
     <div class="card">
       <div class="empty" style="text-align:left; padding:0 0 10px;">
-        Sparade livsmedel fylls i automatiskt när du skriver namnet i "Bygg av flera delar".
+        Sparade livsmedel kan väljas direkt när du bygger en måltid.
       </div>
-      ${state.pantry.length ? state.pantry.map((p,i)=>`
-        <div class="entry" style="margin-bottom:6px;">
+      ${state.pantryEdit ? pantryEditForm()
+        : `<button class="addbtn" id="pantryAdd" style="border-style:solid; color:#fff; background:var(--sage); border-color:var(--sage);">+ Lägg till livsmedel</button>`}
+      ${state.pantry.length ? pantrySorted('').map(p=>{
+        const i = state.pantry.indexOf(p);
+        const amt = Number(p.portion) || (p.unit==='st'?1:100);
+        return `<div class="entry" style="margin-bottom:6px;">
           <div>
             <div class="name">${p.name}</div>
-            <div class="sub">${p.kcalPer100} kcal ${p.unit==='st'?'/ st':'/ 100g'} · P ${p.proteinPer100} · F ${p.fatPer100} · K ${p.carbsPer100}</div>
+            <div class="sub">${amt}${p.unit==='st'?' st':' g'} = ${pantryPortionKcal(p)} kcal · ${p.kcalPer100} kcal ${p.unit==='st'?'/st':'/100g'} · P ${p.proteinPer100} · F ${p.fatPer100} · K ${p.carbsPer100}</div>
           </div>
-          <div class="right"><button class="del delpantry" data-idx="${i}">×</button></div>
-        </div>`).join('') : '<div class="empty">Inga sparade livsmedel än.</div>'}
+          <div class="right">
+            <button class="del editpantry" data-idx="${i}" title="Ändra">✎</button>
+            <button class="del delpantry" data-idx="${i}" title="Ta bort">×</button>
+          </div>
+        </div>`;
+      }).join('') : '<div class="empty">Inga sparade livsmedel än.</div>'}
     </div>
 
     <div class="sectitle">Synk (GitHub)</div>
@@ -3015,6 +3121,127 @@ function renderSettings(content){
       render();
     };
   });
+
+  const paBtn = document.getElementById('pantryAdd');
+  if(paBtn) paBtn.onclick = () => {
+    state.pantryEdit = { index:null, name:'', unit:'g', portion:100,
+      kcalPer100:0, proteinPer100:0, fatPer100:0, carbsPer100:0 };
+    renderContent();
+  };
+
+  content.querySelectorAll('.editpantry').forEach(btn => {
+    btn.onclick = () => {
+      const p = state.pantry[Number(btn.dataset.idx)];
+      if(!p) return;
+      state.pantryEdit = { index:Number(btn.dataset.idx), name:p.name, unit:p.unit,
+        portion:Number(p.portion) || (p.unit==='st'?1:100),
+        kcalPer100:p.kcalPer100, proteinPer100:p.proteinPer100,
+        fatPer100:p.fatPer100, carbsPer100:p.carbsPer100 };
+      renderContent();
+    };
+  });
+
+  if(state.pantryEdit){
+    const R = state.pantryEdit;
+    const readFields = () => {
+      const g = id => document.getElementById(id);
+      R.name = g('peName').value;
+      R.portion = Number(g('pePortion').value) || (R.unit==='st'?1:100);
+      R.kcalPer100 = Number(g('peKcal').value) || 0;
+      R.proteinPer100 = Number(g('peProtein').value) || 0;
+      R.fatPer100 = Number(g('peFat').value) || 0;
+      R.carbsPer100 = Number(g('peCarbs').value) || 0;
+    };
+
+    content.querySelectorAll('.pe-unit').forEach(b => {
+      b.onclick = () => {
+        readFields();
+        if(R.unit === b.dataset.unit) return;
+        R.unit = b.dataset.unit;
+        R.portion = R.unit === 'st' ? 1 : 100;
+        R.kcalPer100 = 0; R.proteinPer100 = 0; R.fatPer100 = 0; R.carbsPer100 = 0;
+        renderContent();
+      };
+    });
+
+    const fill = (p, setName) => {
+      const g = id => document.getElementById(id);
+      if(setName && p.name && !g('peName').value.trim()) g('peName').value = String(p.name).trim();
+      g('peKcal').value = Math.round(Number(p.kcalPer100)||0);
+      g('peProtein').value = Math.round((Number(p.proteinPer100)||0)*10)/10;
+      g('peFat').value = Math.round((Number(p.fatPer100)||0)*10)/10;
+      g('peCarbs').value = Math.round((Number(p.carbsPer100)||0)*10)/10;
+    };
+    const st = () => document.getElementById('peStatus');
+
+    const peEst = document.getElementById('peEst');
+    if(peEst) peEst.onclick = async () => {
+      readFields();
+      if(!R.name.trim()){ st().style.color='var(--rust)'; st().textContent='Skriv in ett livsmedel först.'; return; }
+      peEst.disabled = true; peEst.textContent = 'Uppskattar…';
+      st().style.color='var(--muted)'; st().textContent='';
+      try{
+        const perPiece = R.unit === 'st';
+        const data = await callAnthropic({ model:"claude-sonnet-4-6", max_tokens:300,
+          messages:[{ role:"user", content: perPiece
+            ? `Uppskatta näringsinnehållet för EN (1) normalstor enhet av: "${R.name}". Svara ENDAST med JSON, ingen markdown: {"kcalPer100":number,"proteinPer100":number,"fatPer100":number,"carbsPer100":number}`
+            : `Uppskatta näringsinnehåll per 100 gram för: "${R.name}". Svara ENDAST med JSON, ingen markdown: {"kcalPer100":number,"proteinPer100":number,"fatPer100":number,"carbsPer100":number}` }]});
+        const tb = (data.content||[]).find(b=>b.type==='text');
+        fill(JSON.parse(tb.text.replace(/```json|```/g,'').trim()), false);
+      }catch(e){ st().style.color='var(--rust)'; st().textContent='Fel: '+((e.message||'').slice(0,80)); }
+      finally{ peEst.disabled = false; peEst.textContent = '✨ Uppskatta'; }
+    };
+
+    const peScanBtn = document.getElementById('peScanBtn');
+    const peScanInput = document.getElementById('peScanInput');
+    if(peScanBtn && peScanInput){
+      peScanBtn.onclick = () => peScanInput.click();
+      peScanInput.onchange = async () => {
+        const file = peScanInput.files && peScanInput.files[0];
+        peScanInput.value = '';
+        if(!file) return;
+        readFields();
+        peScanBtn.disabled = true; peScanBtn.textContent = 'Läser…';
+        st().style.color='var(--muted)'; st().textContent='';
+        try{
+          const b64 = await fileToBase64(file);
+          const data = await callAnthropic({ model:"claude-sonnet-4-6", max_tokens:400,
+            messages:[{ role:"user", content:[
+              { type:"image", source:{ type:"base64", media_type:file.type||'image/jpeg', data:b64 } },
+              { type:"text", text:'Läs näringsdeklarationen och räkna om till PER 100 GRAM. Svara ENDAST med JSON, ingen markdown: {"name":string,"kcalPer100":number,"proteinPer100":number,"fatPer100":number,"carbsPer100":number}' }]}]});
+          const tb = (data.content||[]).find(b=>b.type==='text');
+          fill(JSON.parse(tb.text.replace(/```json|```/g,'').trim()), true);
+        }catch(e){ st().style.color='var(--rust)'; st().textContent='Fel: '+((e.message||'').slice(0,80)); }
+        finally{ peScanBtn.disabled = false; peScanBtn.textContent = '📷 Skanna etikett'; }
+      };
+    }
+
+    const peCancel = document.getElementById('peCancel');
+    if(peCancel) peCancel.onclick = () => { state.pantryEdit = null; renderContent(); };
+
+    const peSave = document.getElementById('peSave');
+    if(peSave) peSave.onclick = async () => {
+      readFields();
+      if(!R.name.trim() || !R.kcalPer100){
+        st().style.color='var(--rust)';
+        st().textContent='Fyll i namn och kcal.';
+        return;
+      }
+      const item = { name:R.name.trim(), unit:R.unit, portion:R.portion,
+        kcalPer100:R.kcalPer100, proteinPer100:R.proteinPer100,
+        fatPer100:R.fatPer100, carbsPer100:R.carbsPer100,
+        lastUsed: R.index === null ? Date.now() : (state.pantry[R.index].lastUsed || Date.now()) };
+      if(R.index === null){
+        state.pantry = state.pantry.filter(p => !(normName(p.name)===normName(item.name) && p.unit===item.unit));
+        state.pantry.push(item);
+      } else {
+        state.pantry[R.index] = item;
+      }
+      state.pantryEdit = null;
+      await ghSaveBundle();
+      renderContent();
+    };
+  }
 
   content.querySelectorAll('.delpantry').forEach(btn => {
     btn.onclick = async () => {
