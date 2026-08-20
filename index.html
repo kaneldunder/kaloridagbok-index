@@ -146,6 +146,16 @@
   .confirmbtn.no{background:#fff; color:var(--muted);}
   .confirmbtn.yes{background:var(--rust); color:#fff;}
   .confirmbtn.save{background:var(--ink); color:#fff;}
+  .editentry{
+    border:none; background:transparent; color:var(--muted); font-size:14px;
+    cursor:pointer; padding:2px 4px; border-radius:5px;
+  }
+  .editentry:hover{background:var(--line);}
+  .entry.editrow{align-items:flex-start; flex-direction:column; gap:8px; flex-wrap:wrap;}
+  .eefield{
+    width:100%; border:1px solid var(--line); border-radius:8px;
+    padding:8px 9px; font-size:14px; font-family:inherit; background:#fff; color:var(--ink);
+  }
   button.etime{border:1px solid transparent; cursor:pointer; font-family:inherit;}
   button.etime:hover{border-color:var(--line);}
   button.etime.notime{color:var(--line);}
@@ -320,9 +330,10 @@
   .copyday b{display:block; font-size:13.5px; color:var(--ink); font-weight:600;}
   .copyday small{display:block; font-size:11.5px; color:var(--muted); margin-top:1px;}
   .copyday .dtk{font-size:14px; font-weight:600; color:var(--rust); white-space:nowrap;}
-  .mealtypes{display:flex; gap:6px; margin:12px 0;}
+  .mealtypes{display:flex; flex-direction:column; gap:5px; margin:12px 0;}
+  .mtrow{display:flex; gap:6px;}
   .mtbtn{
-    flex:1; border:1px solid var(--line); background:#fff; border-radius:16px;
+    flex:1 1 auto; min-width:60px; border:1px solid var(--line); background:#fff; border-radius:16px;
     padding:9px 4px; font-size:12px; font-weight:600; color:var(--muted);
     cursor:pointer; font-family:inherit; white-space:nowrap;
     transition:background .12s, color .12s, border-color .12s;
@@ -434,6 +445,7 @@ let state = {
   confirmDelFav: null,
   favQty: {},
   editingTime: null,
+  editingEntry: null,
   mealType: null,
   pantryQuery: '',
   pickerOpen: false,
@@ -741,7 +753,8 @@ const MEAL_TYPES = [
   { key:'frukost',   label:'Frukost',   time:'07:30', match:/^\s*frukost\b|^\s*breakfast\b/i },
   { key:'lunch',     label:'Lunch',     time:'12:00', match:/^\s*lunch\b/i },
   { key:'middag',    label:'Middag',    time:'18:00', match:/^\s*(middag|kvällsmat|dinner)\b/i },
-  { key:'mellanmal', label:'Mellanmål', time:'15:00', match:/^\s*(mellanmål|fika)\b/i }
+  { key:'mellanmal', label:'Mellanmål', time:'15:00', match:/^\s*(mellanmål|fika)\b/i },
+  { key:'snack',     label:'Snack',     time:'21:00', match:/^\s*(snack|kvällsmat|gottis|chips|nötter|frukt)\b/i }
 ];
 function mealTypeLabel(key){
   const m = MEAL_TYPES.find(x => x.key === key);
@@ -1007,11 +1020,15 @@ function mealPatternBlock(results){
         </div>
       </div>
       <div class="cmp-note" style="margin:0 0 12px;">
-        ${Math.abs(diff) < 100
-          ? `Intaget skiljer sig knappt (${p.intakeWith} mot ${p.intakeWithout} kcal). Att hoppa över verkar inte påverka totalen.`
-          : more
-            ? `Du åt i snitt mer totalt de dagar ${p.kind.label.toLowerCase()} saknades (${p.intakeWithout} mot ${p.intakeWith} kcal) — det äts alltså upp senare på dagen och lite till.`
-            : `Du åt i snitt mindre totalt de dagar ${p.kind.label.toLowerCase()} saknades (${p.intakeWithout} mot ${p.intakeWith} kcal) — måltiden kompenserades inte fullt ut.`}
+        ${p.kind.key === 'snack'
+          ? (Math.abs(diff) < 50
+            ? `Liten skillnad i totalt intag mellan snack-dagar och andra (${p.intakeWith} mot ${p.intakeWithout} kcal).`
+            : `Snack bidrar med i snitt ${Math.abs(p.intakeWith - p.intakeWithout)} extra kcal (${p.intakeWith} mot ${p.intakeWithout} kcal utan snack).`)
+          : Math.abs(diff) < 100
+            ? `Intaget skiljer sig knappt (${p.intakeWith} mot ${p.intakeWithout} kcal). Att hoppa över verkar inte påverka totalen.`
+            : more
+              ? `Du åt i snitt mer totalt de dagar ${p.kind.label.toLowerCase()} saknades (${p.intakeWithout} mot ${p.intakeWith} kcal) — det äts alltså upp senare på dagen och lite till.`
+              : `Du åt i snitt mindre totalt de dagar ${p.kind.label.toLowerCase()} saknades (${p.intakeWithout} mot ${p.intakeWith} kcal) — måltiden kompenserades inte fullt ut.`}
         ${Math.abs(pDiff) >= 15 ? ` Proteinet ${pDiff < 0 ? 'sjönk' : 'steg'} ${Math.abs(pDiff)} g i snitt.` : ''}
       </div>`;
     }).join('')}
@@ -1097,6 +1114,35 @@ function missingDaysNotice(){
 }
 
 /* ---------- DAY VIEW ---------- */
+function entryEditRow(item, idx, type){
+  return `<div class="entry ${type} editrow" style="flex-wrap:wrap; gap:8px; align-items:flex-start;">
+    <div style="flex:1; min-width:200px;">
+      <div class="sub" style="margin-bottom:6px;">${type==='food'?'Redigera måltid':'Redigera träning'}</div>
+      <input id="eeName" placeholder="Namn" value="${(item.name||'').replace(/"/g,'&quot;')}"
+        style="width:100%; border:1px solid var(--line); border-radius:8px; padding:8px 9px; font-size:14px; font-family:inherit; margin-bottom:6px;">
+      ${type === 'food' ? `<div class="mealtypes" style="margin:0 0 8px;">
+        <div class="mtrow">${MEAL_TYPES.slice(0,3).map(m=>`<button type="button" class="mtbtn ${(item.mealType||detectMealType(item.name))===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
+        <div class="mtrow">${MEAL_TYPES.slice(3).map(m=>`<button type="button" class="mtbtn ${(item.mealType||detectMealType(item.name))===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
+      </div>` : ''}
+      <div class="fieldgrid">
+        <div><label>Kcal</label><input id="eeKcal" type="number" value="${item.kcal||0}"
+          style="border:1px solid var(--line); border-radius:8px; padding:8px; font-size:14px; font-family:inherit; width:100%;"></div>
+        ${type==='food'?`<div><label>Protein (g)</label><input id="eeProtein" type="number" value="${item.protein||0}"
+          style="border:1px solid var(--line); border-radius:8px; padding:8px; font-size:14px; font-family:inherit; width:100%;"></div>
+        </div><div class="fieldgrid">
+        <div><label>Fett (g)</label><input id="eeFat" type="number" value="${item.fat||0}"
+          style="border:1px solid var(--line); border-radius:8px; padding:8px; font-size:14px; font-family:inherit; width:100%;"></div>
+        <div><label>Kolhydrater (g)</label><input id="eeCarbs" type="number" value="${item.carbs||0}"
+          style="border:1px solid var(--line); border-radius:8px; padding:8px; font-size:14px; font-family:inherit; width:100%;"></div>`:'<div></div>'}
+      </div>
+    </div>
+    <div style="display:flex; gap:6px; align-self:flex-end;">
+      <button class="confirmbtn no" id="cancelEntry">Avbryt</button>
+      <button class="confirmbtn save" id="saveEntry" data-type="${type}" data-idx="${idx}">Spara</button>
+    </div>
+  </div>`;
+}
+
 async function renderDay(content){
   const dateStr = ymd(state.currentDate);
   const data = await loadDay(dateStr);
@@ -1151,7 +1197,9 @@ async function renderDay(content){
     `}
     ${data.food.length ? data.food.map((f,i)=>
       (state.editingTime && state.editingTime.type==='food' && state.editingTime.idx===i)
-        ? timeEditRow(f,i,'food') : entryRow(f,i,'food')).join('') : `<div class="empty">Inga måltider loggade</div>`}
+        ? timeEditRow(f,i,'food')
+      : (state.editingEntry && state.editingEntry.type==='food' && state.editingEntry.idx===i)
+        ? entryEditRow(f,i,'food') : entryRow(f,i,'food')).join('') : `<div class="empty">Inga måltider loggade</div>`}
 
     <div class="sectitle">Träning & aktivitet</div>
     ${inBaselineMode() ? activeKcalRow(data) : ''}
@@ -1165,7 +1213,9 @@ async function renderDay(content){
       const shown = data.exercise.map((e,i)=>({e,i})).filter(x => !(inBaselineMode() && x.e.active));
       return shown.length ? shown.map(({e,i}) =>
         (state.editingTime && state.editingTime.type==='exercise' && state.editingTime.idx===i)
-          ? timeEditRow(e,i,'exercise') : entryRow(e,i,'exercise')).join('')
+          ? timeEditRow(e,i,'exercise')
+        : (state.editingEntry && state.editingEntry.type==='exercise' && state.editingEntry.idx===i)
+          ? entryEditRow(e,i,'exercise') : entryRow(e,i,'exercise')).join('')
         : `<div class="empty">Ingen träning loggad</div>`;
     })()}
   `;
@@ -1303,6 +1353,42 @@ async function renderDay(content){
 
   const showFavBtn = document.getElementById('showFavorites');
   if(showFavBtn) showFavBtn.onclick = () => { state.openForm = 'favorites'; state.confirmDelFav = null; renderContent(); };
+
+  content.querySelectorAll('.editentry').forEach(btn => {
+    btn.onclick = () => {
+      state.editingEntry = { type: btn.dataset.type, idx: Number(btn.dataset.idx) };
+      state.editingTime = null;
+      renderContent();
+    };
+  });
+
+  const cancelEntry = document.getElementById('cancelEntry');
+  if(cancelEntry) cancelEntry.onclick = () => { state.editingEntry = null; renderContent(); };
+
+  const saveEntry = document.getElementById('saveEntry');
+  if(saveEntry) saveEntry.onclick = async () => {
+    const type = saveEntry.dataset.type, i = Number(saveEntry.dataset.idx);
+    const item = data[type] && data[type][i];
+    if(!item){ state.editingEntry = null; renderContent(); return; }
+    const g = id => { const e=document.getElementById(id); return e ? e.value : null; };
+    const name = (g('eeName')||'').trim();
+    const kcal = Number(g('eeKcal')) || 0;
+    if(!name || !kcal){ state.editingEntry = null; renderContent(); return; }
+    item.name = name;
+    item.kcal = kcal;
+    if(type === 'food'){
+      item.protein = Number(g('eeProtein')) || 0;
+      item.fat     = Number(g('eeFat'))     || 0;
+      item.carbs   = Number(g('eeCarbs'))   || 0;
+      // Meal type: read the active button in the edit row
+      const activeMt = document.querySelector('.entry.editrow .mtbtn.active');
+      if(activeMt) item.mealType = activeMt.dataset.mt;
+      else if(!item.mealType) item.mealType = detectMealType(item.name) || null;
+    }
+    await saveDay(dateStr, data);
+    state.editingEntry = null;
+    renderContent();
+  };
 
   content.querySelectorAll('.edittime').forEach(btn => {
     btn.onclick = () => {
@@ -1556,7 +1642,13 @@ async function renderDay(content){
 
   content.querySelectorAll('.mtbtn').forEach(b => {
     b.onclick = () => {
-      // Växla markeringen på plats — omrendering skulle radera det man skrivit
+      // Redigeringsrad: bara byt aktiv klass, påverka inte state.mealType
+      if(b.closest('.entry.editrow')){
+        b.closest('.entry.editrow').querySelectorAll('.mtbtn').forEach(x =>
+          x.classList.toggle('active', x === b));
+        return;
+      }
+      // Normalt formulär: växla markeringen på plats
       state.mealType = state.mealType === b.dataset.mt ? null : b.dataset.mt;
       content.querySelectorAll('.mtbtn').forEach(x =>
         x.classList.toggle('active', x.dataset.mt === state.mealType));
@@ -1807,6 +1899,7 @@ function entryRow(item, idx, type){
     </div>
     <div class="right">
       <div class="kcal">${type==='exercise'?'−':''}${item.kcal} kcal</div>
+      <button class="editentry" data-type="${type}" data-idx="${idx}" title="Ändra">✎</button>
       <button class="del" data-type="${type}" data-idx="${idx}">×</button>
     </div>
   </div>`;
@@ -1880,7 +1973,8 @@ function quickFoodForm(){
   return `
     <div class="row"><input id="fName" placeholder="Vad åt du? (valfritt om du valt måltidstyp)" value="${ed ? ed.name : ''}"></div>
     <div class="mealtypes">
-      ${MEAL_TYPES.map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}
+      <div class="mtrow">${MEAL_TYPES.slice(0,3).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
+      <div class="mtrow">${MEAL_TYPES.slice(3).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
     </div>
     <div style="display:flex; gap:6px; margin:12px 0;">
       <button class="estbtn" id="quickEstBtn" style="flex:1;">✨ Uppskatta text</button>
@@ -2022,7 +2116,8 @@ function buildMealForm(){
   return `
         <div class="row"><input id="buildMealName" placeholder="Namn (valfritt — annars måltidstypen)" value="${state.editingFav !== null && state.favorites[state.editingFav] ? state.favorites[state.editingFav].name : ''}"></div>
     <div class="mealtypes">
-      ${MEAL_TYPES.map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}
+      <div class="mtrow">${MEAL_TYPES.slice(0,3).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
+      <div class="mtrow">${MEAL_TYPES.slice(3).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
     </div>
 
     ${state.pickerOpen ? pantryPicker() : ''}
