@@ -513,8 +513,19 @@ function normName(s){ return (s||'').trim().toLowerCase(); }
 function findInPantry(name, unit){
   const n = normName(name);
   if(!n) return null;
-  return state.pantry.find(p => normName(p.name) === n && (unit ? p.unit === unit : true))
-      || state.pantry.find(p => normName(p.name) === n)
+  const byUnit = (p) => !unit || p.unit === unit;
+  // 1. Exakt match
+  const exact = state.pantry.find(p => normName(p.name) === n && byUnit(p));
+  if(exact) return exact;
+  // 2. Det sökta finns i biblioteksnamnet ("Grekisk yoghurt" → "Arla Grekisk Yoghurt")
+  const contains = state.pantry.find(p => normName(p.name).includes(n) && byUnit(p));
+  if(contains) return contains;
+  // 3. Biblioteksnamnet finns i det sökta ("Arla Grekisk Yoghurt" → "200 g Arla Grekisk Yoghurt")
+  const contained = state.pantry.find(p => n.includes(normName(p.name)) && normName(p.name).length > 3 && byUnit(p));
+  if(contained) return contained;
+  // 4. Fallback utan enhetsfilter
+  return state.pantry.find(p => normName(p.name) === n)
+      || state.pantry.find(p => normName(p.name).includes(n))
       || null;
 }
 function pantryHasExact(row){
