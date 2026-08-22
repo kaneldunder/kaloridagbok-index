@@ -1200,8 +1200,10 @@ function entryEditRow(item, idx, type){
           style="border:1px solid var(--line); border-radius:8px; padding:8px; font-size:14px; font-family:inherit; width:100%;"></div>`:'<div></div>'}
       </div>
     </div>
-    <div style="display:flex; gap:6px; align-self:flex-end;">
+    <div style="display:flex; gap:6px; align-self:flex-end; flex-wrap:wrap;">
       <button class="confirmbtn no" id="cancelEntry">Avbryt</button>
+      ${type==='food' ? `<button class="confirmbtn" id="saveAsFav" style="background:var(--paper); color:#8A6D2A; border:1px solid var(--gold);"
+        title="Spara som favorit">⭐ Favorit</button>` : ''}
       <button class="confirmbtn save" id="saveEntry" data-type="${type}" data-idx="${idx}">Spara</button>
     </div>
   </div>`;
@@ -1485,6 +1487,30 @@ async function renderDay(content){
       renderContent();
     };
   });
+
+  const saveFavBtn = document.getElementById('saveAsFav');
+  if(saveFavBtn) saveFavBtn.onclick = async () => {
+    // Read current field values so edits are included
+    const g = id => { const e=document.getElementById(id); return e ? e.value : null; };
+    const name = (g('eeName')||'').trim() || (state.editingEntry && data[state.editingEntry.type]?.[state.editingEntry.idx]?.name) || '';
+    const kcal = Number(g('eeKcal'))||0;
+    const protein = Number(g('eeProtein'))||0;
+    const fat = Number(g('eeFat'))||0;
+    const carbs = Number(g('eeCarbs'))||0;
+    if(!name||!kcal){ saveFavBtn.textContent='Fyll i namn och kcal'; return; }
+    const existing = state.favorites.findIndex(f=>f.name===name);
+    const fav = {name,kcal,protein,fat,carbs};
+    // Preserve components if the original post has them
+    if(state.editingEntry){
+      const orig=data[state.editingEntry.type]?.[state.editingEntry.idx];
+      if(orig?.components) fav.components=orig.components;
+    }
+    if(existing>=0) state.favorites[existing]=fav;
+    else state.favorites.push(fav);
+    await ghSaveBundle();
+    saveFavBtn.textContent='✓ Sparad!';
+    saveFavBtn.disabled=true;
+  };
 
   const cancelEntry = document.getElementById('cancelEntry');
   if(cancelEntry) cancelEntry.onclick = () => { state.editingEntry = null; renderContent(); };
