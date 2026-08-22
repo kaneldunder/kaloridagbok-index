@@ -146,6 +146,41 @@
   .confirmbtn.no{background:#fff; color:var(--muted);}
   .confirmbtn.yes{background:var(--rust); color:#fff;}
   .confirmbtn.save{background:var(--ink); color:#fff;}
+  .entry.sel-active{background:#F0F7F4; border-color:var(--sage);}
+  .selbtn{
+    border:none; background:transparent; cursor:pointer; padding:0 8px 0 0;
+    flex-shrink:0; display:flex; align-items:center;
+  }
+  .bulkbar{
+    background:var(--sage); color:#fff; border-radius:12px;
+    padding:10px 12px; margin-bottom:10px;
+    display:flex; flex-direction:column; gap:8px;
+  }
+  .bulkbar .bulkcount{font-size:12px; font-weight:600; opacity:.85;}
+  .bulkcancel{
+    border:none; background:rgba(255,255,255,.2); color:#fff; border-radius:7px;
+    padding:5px 10px; font-size:11.5px; font-weight:600; cursor:pointer;
+    font-family:inherit; align-self:flex-start;
+  }
+  .bulktypes{display:flex; gap:5px; flex-wrap:wrap;}
+  .bulktype{
+    border:1.5px solid rgba(255,255,255,.5); background:transparent; color:#fff;
+    border-radius:14px; padding:6px 11px; font-size:12px; font-weight:600;
+    cursor:pointer; font-family:inherit;
+  }
+  .bulktype:hover{background:rgba(255,255,255,.2);}
+  .selstart{
+    border:none; background:transparent; color:var(--line); font-size:15px;
+    cursor:pointer; padding:2px 4px; border-radius:5px; opacity:0;
+    transition:opacity .15s;
+  }
+  @media(hover:hover){
+    .entry:hover .selstart{ opacity:1; color:var(--muted); }
+  }
+  /* Always visible on touch devices since there's no hover */
+  @media(hover:none){
+    .selstart{ display:none; }
+  }
   .editentry{
     border:none; background:transparent; color:var(--muted); font-size:14px;
     cursor:pointer; padding:2px 4px; border-radius:5px;
@@ -339,6 +374,7 @@
     transition:background .12s, color .12s, border-color .12s;
   }
   .mtbtn.active{background:var(--sage); color:#fff; border-color:var(--sage);}
+  .mtbtn.active.alkohol, .mtbtn[data-mt="alkohol"].active{background:#7B5EA7; border-color:#7B5EA7;}
   .pickerbox{background:#fff; border:1px solid var(--line); border-radius:12px; padding:10px; margin-bottom:10px;}
   .pickerbox #pantrySearch{
     width:100%; border:1px solid var(--line); border-radius:9px; padding:10px;
@@ -446,6 +482,7 @@ let state = {
   favQty: {},
   editingTime: null,
   editingEntry: null,
+  selectedEntries: new Set(),
   mealType: null,
   pantryQuery: '',
   pickerOpen: false,
@@ -765,7 +802,8 @@ const MEAL_TYPES = [
   { key:'lunch',     label:'Lunch',     time:'12:00', match:/^\s*lunch\b/i },
   { key:'middag',    label:'Middag',    time:'18:00', match:/^\s*(middag|kvällsmat|dinner)\b/i },
   { key:'mellanmal', label:'Mellanmål', time:'15:00', match:/^\s*(mellanmål|fika)\b/i },
-  { key:'snack',     label:'Snack',     time:'21:00', match:/^\s*(snack|kvällsmat|gottis|chips|nötter|frukt)\b/i }
+  { key:'snack',     label:'Snack',     time:'21:00', match:/^\s*(snack|kvällsmat|gottis|chips|nötter|frukt)\b/i },
+  { key:'alkohol',   label:'Alkohol',   time:'19:00', match:/(^|\s)(alkohol|öl|vin|sprit|cocktail|cider|champagne|prosecco|whisky|whiskey|vodka|gin\b|rom|calvados|cognac|aperol|aperitif)(\s|$|,)/i }
 ];
 function mealTypeLabel(key){
   const m = MEAL_TYPES.find(x => x.key === key);
@@ -1031,7 +1069,11 @@ function mealPatternBlock(results){
         </div>
       </div>
       <div class="cmp-note" style="margin:0 0 12px;">
-        ${p.kind.key === 'snack'
+        ${p.kind.key === 'alkohol'
+          ? (Math.abs(diff) < 50
+            ? `Liten skillnad i totalt intag mellan alkohol-dagar och andra (${p.intakeWith} mot ${p.intakeWithout} kcal).`
+            : `Alkohol bidrar med i snitt ${Math.abs(p.intakeWith - p.intakeWithout)} extra kcal på dessa dagar (${p.intakeWith} mot ${p.intakeWithout} kcal). Kom ihåg att alkohol även bromsar fettförbränningen medan det förbränns.`)
+          : p.kind.key === 'snack'
           ? (Math.abs(diff) < 50
             ? `Liten skillnad i totalt intag mellan snack-dagar och andra (${p.intakeWith} mot ${p.intakeWithout} kcal).`
             : `Snack bidrar med i snitt ${Math.abs(p.intakeWith - p.intakeWithout)} extra kcal (${p.intakeWith} mot ${p.intakeWithout} kcal utan snack).`)
@@ -1125,6 +1167,17 @@ function missingDaysNotice(){
 }
 
 /* ---------- DAY VIEW ---------- */
+function bulkBar(){
+  const n = state.selectedEntries.size;
+  return `<div class="bulkbar">
+    <button class="bulkcancel" id="clearSel">✕ Avmarkera alla</button>
+    <span class="bulkcount">${n} ${n===1?'post':'poster'} markerade</span>
+    <div class="bulktypes">
+      ${MEAL_TYPES.map(m=>`<button class="bulktype" data-mt="${m.key}">${m.label}</button>`).join('')}
+    </div>
+  </div>`;
+}
+
 function entryEditRow(item, idx, type){
   return `<div class="entry ${type} editrow" style="flex-wrap:wrap; gap:8px; align-items:flex-start;">
     <div style="flex:1; min-width:200px;">
@@ -1197,6 +1250,7 @@ async function renderDay(content){
 
     ${missingDaysNotice()}
     <div class="sectitle">Måltider</div>
+    ${state.selectedEntries.size>0 ? bulkBar() : ''}
     ${state.openForm === 'food' ? foodForm()
       : state.openForm === 'favorites' ? favoritesPanel()
       : state.openForm === 'copyDay' ? copyDayPanel() : `
@@ -1364,6 +1418,65 @@ async function renderDay(content){
 
   const showFavBtn = document.getElementById('showFavorites');
   if(showFavBtn) showFavBtn.onclick = () => { state.openForm = 'favorites'; state.confirmDelFav = null; renderContent(); };
+
+  content.querySelectorAll('.selstart').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      state.selectedEntries.add(btn.dataset.selkey);
+      renderContent();
+    };
+  });
+
+  // Long-press on any entry starts multi-select
+  content.querySelectorAll('.entry[data-selkey]').forEach(row => {
+    let timer;
+    const startLong = () => { timer = setTimeout(()=>{ state.selectedEntries.add(row.dataset.selkey); renderContent(); },400); };
+    const cancel = () => clearTimeout(timer);
+    row.addEventListener('mousedown', startLong);
+    row.addEventListener('touchstart', startLong, {passive:true});
+    row.addEventListener('mouseup', cancel);
+    row.addEventListener('mouseleave', cancel);
+    row.addEventListener('touchend', cancel);
+  });
+
+  // Checkbox toggle
+  content.querySelectorAll('.selbtn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const k = btn.dataset.selkey;
+      if(state.selectedEntries.has(k)) state.selectedEntries.delete(k);
+      else state.selectedEntries.add(k);
+      if(state.selectedEntries.size===0) renderContent();
+      else {
+        // Update just the button appearance without full re-render
+        const svg = state.selectedEntries.has(k)
+          ? '<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="var(--sage)"/><path d="M4.5 8l2.5 2.5 4-4" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>'
+          : '<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="var(--line)" stroke-width="1.5"/></svg>';
+        btn.innerHTML = svg;
+        btn.classList.toggle('checked', state.selectedEntries.has(k));
+        btn.closest('.entry').classList.toggle('sel-active', state.selectedEntries.has(k));
+        // Update count in bar
+        const cnt = document.querySelector('.bulkcount');
+        if(cnt){ const n=state.selectedEntries.size; cnt.textContent=n+' '+(n===1?'post':'poster')+' markerade'; }
+      }
+    };
+  });
+
+  const clearSel = document.getElementById('clearSel');
+  if(clearSel) clearSel.onclick = () => { state.selectedEntries = new Set(); renderContent(); };
+
+  content.querySelectorAll('.bulktype').forEach(btn => {
+    btn.onclick = async () => {
+      const mt = btn.dataset.mt;
+      state.selectedEntries.forEach(key => {
+        const [type, idx] = [key.split(':')[0], Number(key.split(':')[1])];
+        if(data[type] && data[type][idx]) data[type][idx].mealType = mt;
+      });
+      await saveDay(dateStr, data);
+      state.selectedEntries = new Set();
+      renderContent();
+    };
+  });
 
   content.querySelectorAll('.editentry').forEach(btn => {
     btn.onclick = () => {
@@ -1902,16 +2015,28 @@ function entryRow(item, idx, type){
     ? `<button class="etime edittime" data-type="${type}" data-idx="${idx}" title="Ändra tid">${item.time}</button>`
     : `<button class="etime edittime notime" data-type="${type}" data-idx="${idx}" title="Sätt tid">– –</button>`;
   const mt = type === 'food' ? (item.mealType || detectMealType(item.name)) : null;
-  const mtTag = mt ? `<span class="mtag">${mealTypeLabel(mt)}</span>` : '';
-  return `<div class="entry ${type}">
-    <div>
+  const mtColor = mt === 'alkohol' ? '#7B5EA7' : 'var(--sage)';
+  const mtBg    = mt === 'alkohol' ? '#F0EBF8' : 'var(--sage-light)';
+  const mtTag = mt ? `<span class="mtag" style="color:${mtColor}; background:${mtBg};">${mealTypeLabel(mt)}</span>` : '';
+  const selKey = type+':'+idx;
+  const selected = state.selectedEntries.has(selKey);
+  return `<div class="entry ${type} ${selected?'sel-active':''}" data-selkey="${selKey}" data-type="${type}" data-idx="${idx}">
+    ${state.selectedEntries.size>0
+      ? `<button class="selbtn ${selected?'checked':''}" data-selkey="${selKey}">
+          ${selected?'<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="var(--sage)"/><path d="M4.5 8l2.5 2.5 4-4" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>'
+            :'<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="var(--line)" stroke-width="1.5"/></svg>'}
+        </button>`
+      : ''}
+    <div style="flex:1; min-width:0;">
       <div class="name">${time}${mtTag}${item.name}</div>
       ${sub}
     </div>
     <div class="right">
       <div class="kcal">${type==='exercise'?'−':''}${item.kcal} kcal</div>
-      <button class="editentry" data-type="${type}" data-idx="${idx}" title="Ändra">✎</button>
-      <button class="del" data-type="${type}" data-idx="${idx}">×</button>
+      ${state.selectedEntries.size>0?'':`
+        <button class="selstart" data-selkey="${selKey}" title="Markera för flerval">◎</button>
+        <button class="editentry" data-type="${type}" data-idx="${idx}" title="Ändra">✎</button>
+        <button class="del" data-type="${type}" data-idx="${idx}">×</button>`}
     </div>
   </div>`;
 }
@@ -1985,7 +2110,8 @@ function quickFoodForm(){
     <div class="row"><input id="fName" placeholder="Vad åt du? (valfritt om du valt måltidstyp)" value="${ed ? ed.name : ''}"></div>
     <div class="mealtypes">
       <div class="mtrow">${MEAL_TYPES.slice(0,3).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
-      <div class="mtrow">${MEAL_TYPES.slice(3).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
+      <div class="mtrow">${MEAL_TYPES.slice(3,5).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}
+        <button type="button" class="mtbtn ${state.mealType==='alkohol'?'active alkohol':''}" data-mt="alkohol" style="${state.mealType==='alkohol'?'':''}">Alkohol</button></div>
     </div>
     <div style="display:flex; gap:6px; margin:12px 0;">
       <button class="estbtn" id="quickEstBtn" style="flex:1;">✨ Uppskatta text</button>
@@ -2128,7 +2254,8 @@ function buildMealForm(){
         <div class="row"><input id="buildMealName" placeholder="Namn (valfritt — annars måltidstypen)" value="${state.editingFav !== null && state.favorites[state.editingFav] ? state.favorites[state.editingFav].name : ''}"></div>
     <div class="mealtypes">
       <div class="mtrow">${MEAL_TYPES.slice(0,3).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
-      <div class="mtrow">${MEAL_TYPES.slice(3).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
+      <div class="mtrow">${MEAL_TYPES.slice(3,5).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}
+        <button type="button" class="mtbtn ${state.mealType==='alkohol'?'active alkohol':''}" data-mt="alkohol" style="${state.mealType==='alkohol'?'':''}">Alkohol</button></div>
     </div>
 
     ${state.pickerOpen ? pantryPicker() : ''}
