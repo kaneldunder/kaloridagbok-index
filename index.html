@@ -1431,14 +1431,28 @@ async function renderDay(content){
 
   // Long-press on any entry starts multi-select
   content.querySelectorAll('.entry[data-selkey]').forEach(row => {
-    let timer;
-    const startLong = () => { timer = setTimeout(()=>{ state.selectedEntries.add(row.dataset.selkey); renderContent(); },400); };
+    let timer, startX, startY;
+    const startLong = (e) => {
+      const t = e.touches ? e.touches[0] : e;
+      startX = t.clientX; startY = t.clientY;
+      timer = setTimeout(()=>{
+        state.selectedEntries.add(row.dataset.selkey);
+        if(navigator.vibrate) navigator.vibrate(30);
+        renderContent();
+      }, 1000);
+    };
     const cancel = () => clearTimeout(timer);
+    const move = (e) => {
+      const t = e.touches ? e.touches[0] : e;
+      if(Math.abs(t.clientX-startX)>8 || Math.abs(t.clientY-startY)>8) cancel();
+    };
     row.addEventListener('mousedown', startLong);
     row.addEventListener('touchstart', startLong, {passive:true});
     row.addEventListener('mouseup', cancel);
     row.addEventListener('mouseleave', cancel);
     row.addEventListener('touchend', cancel);
+    row.addEventListener('touchmove', move, {passive:true});
+    row.addEventListener('mousemove', move);
   });
 
   // Checkbox toggle
