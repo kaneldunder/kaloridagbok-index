@@ -630,22 +630,56 @@ function parseQuantityAnywhere(text){
   return parsed ? { ...parsed, name } : null;
 }
 
-/* Slår upp fritext mot biblioteket. Klarar flera delar: "2 ägg och 125 g yoghurt". */
+/* Slår upp fritext mot biblioteket. Kräver att ALLA delar hittas.
+   Om en del är okänd returneras null och AI tar hela texten. */
+/* Partiell uppslag: kända delar från biblioteket + mängd för okända.
+   Returnerar { known, unknownText } eller null om ingenting hittas. */
+function pantryPartialLookup(text){
+  const parts = (text||'').split(/\s*(?:,|\boch\b|\bmed\b|\+|&)\s*/i).map(x=>x.trim()).filter(Boolean);
+  if(!parts.length) return null;
+  const known=[], unknown=[];
+  for(const part of parts){
+    const q = parseQuantityAnywhere(part);
+    const nameGuess = q ? q.name : part;
+    const entry = findInPantry(nameGuess) || findInPantry(part);
+    if(entry){
+      const unit = entry.unit;
+      const amount = (q && ((q.unit==='st')===(unit==='st'))) ? q.amount
+        : (Number(entry.portion)||(unit==='st'?1:100));
+      known.push({ entry, amount, unit });
+    } else {
+      unknown.push(part);
+    }
+  }
+  if(!known.length) return null;
+  const tot = known.reduce((a,it)=>{
+    const f = it.unit==='st' ? it.amount : it.amount/100;
+    a.kcal += f*(Number(it.entry.kcalPer100)||0);
+    a.protein += f*(Number(it.entry.proteinPer100)||0);
+    a.fat += f*(Number(it.entry.fatPer100)||0);
+    a.carbs += f*(Number(it.entry.carbsPer100)||0);
+    return a;
+  },{kcal:0,protein:0,fat:0,carbs:0});
+  return { known, unknown, totals:tot };
+}
+
 function pantryLookupFromText(text){
-  const parts = (text||'').split(/\s*(?:,|\boch\b|\+|&)\s*/i).map(x=>x.trim()).filter(Boolean);
+  const parts = (text||'').split(/\s*(?:,|\boch\b|\bmed\b|\+|&)\s*/i).map(x=>x.trim()).filter(Boolean);
   if(!parts.length) return null;
   const items = [];
   for(const part of parts){
     const q = parseQuantityAnywhere(part);
     const nameGuess = q ? q.name : part;
     const entry = findInPantry(nameGuess) || findInPantry(part);
-    if(!entry) return null;                     // en okänd del → låt AI:n ta hela
+    if(!entry) return null;   // okänd del → låt AI:n ta hela texten
     const unit = entry.unit;
     let amount;
     if(q && ((q.unit === 'st') === (unit === 'st'))) amount = q.amount;
     else amount = Number(entry.portion) || (unit === 'st' ? 1 : 100);
     items.push({ entry, amount, unit });
   }
+  // Kräv att minst en del hittades och att de kända delarna är meningsfulla
+  if(!items.length) return null;
   const tot = items.reduce((a,it) => {
     const f = it.unit === 'st' ? it.amount : it.amount/100;
     a.kcal += f * (Number(it.entry.kcalPer100)||0);
@@ -2233,10 +2267,11 @@ async function estimateQuickMeal(){
     if(statusEl){ statusEl.style.color = 'var(--rust)'; statusEl.textContent = 'Beskriv måltiden först, t.ex. "2 ägg och en banan".'; }
     return;
   }
-  // Kolla biblioteket först — exakta värden slår en uppskattning, och kostar inget
-  const hit = pantryLookupFromText(desc);
-  if(hit){
-    const t = hit.totals;
+  // Kolla biblioteket först — partiell träff: kända delar från biblioteket, okända till AI
+  const partial = pantryPartialLookup(desc);
+  if(partial && !partial.unknown.length){
+    // Alla delar hittades i biblioteket — inget AI-anrop
+    const t = partial.totals;
     const setV = (id,v) => { const e=document.getElementById(id); if(e) e.value=v; };
     setV('fKcal', Math.round(t.kcal));
     setV('fProtein', Math.round(t.protein*10)/10);
@@ -2244,14 +2279,18 @@ async function estimateQuickMeal(){
     setV('fCarbs', Math.round(t.carbs*10)/10);
     if(statusEl){
       statusEl.style.color = 'var(--sage)';
-      statusEl.textContent = '✓ Från ditt bibliotek: ' + hit.items
+      statusEl.textContent = '✓ Från ditt bibliotek: ' + partial.known
         .map(i => `${i.amount}${i.unit==='st'?' st':' g'} ${i.entry.name}`).join(' + ');
     }
-    hit.items.forEach(i => { i.entry.lastUsed = Date.now(); });
+    partial.known.forEach(i => { i.entry.lastUsed = Date.now(); });
     ghSaveBundle();
     return;
   }
 
+  // Om delar hittades i biblioteket, låt AI bara uppskatta de okända
+  const knownTot = partial ? partial.totals : null;
+  const aiDesc = (partial && partial.unknown.length) ? partial.unknown.join(' och ') : desc;
+  const knownNote = knownTot ? ` (OBS: ${partial.known.map(i=>`${i.amount}g ${i.entry.name}`).join('+')} är redan känt med ${Math.round(knownTot.kcal)} kcal, ${Math.round(knownTot.protein)}g protein — uppskatta BARA de okända delarna)` : '';
   if(btn){ btn.disabled = true; btn.textContent = 'Uppskattar…'; }
   if(statusEl) statusEl.textContent = '';
   try{
@@ -2260,7 +2299,7 @@ async function estimateQuickMeal(){
       max_tokens: 400,
       messages: [{
         role: "user",
-        content: `Du är en näringsdatabas. Uppskatta TOTALT näringsinnehåll för hela denna måltid: "${desc}". Om mängder anges i styck eller vardagliga mått, utgå från typiska svenska normalstorlekar. Anta vanligast förekommande beredning. Svara ENDAST med ett JSON-objekt, inga förklaringar, ingen markdown, inga kodstaket. Format exakt: {"kcal": number, "protein": number, "fat": number, "carbs": number, "antaganden": "kort text om vilka storlekar du utgått från"}`
+        content: `Du är en näringsdatabas. Uppskatta TOTALT näringsinnehåll för: "${aiDesc}"${knownNote}. Om mängder anges i styck eller vardagliga mått, utgå från typiska svenska normalstorlekar. Anta vanligast förekommande beredning. Svara ENDAST med ett JSON-objekt, inga förklaringar, ingen markdown, inga kodstaket. Format exakt: {"kcal": number, "protein": number, "fat": number, "carbs": number, "antaganden": "kort text om vilka storlekar du utgått från"}`
       }]
     });
     const textBlock = (data.content || []).find(b => b.type === 'text');
@@ -2268,14 +2307,20 @@ async function estimateQuickMeal(){
     const parsed = JSON.parse(textBlock.text.replace(/```json|```/g, '').trim());
 
     const setVal = (id, v) => { const el = document.getElementById(id); if(el) el.value = v; };
-    setVal('fKcal', Math.round(Number(parsed.kcal) || 0));
-    setVal('fProtein', Math.round((Number(parsed.protein) || 0) * 10) / 10);
-    setVal('fFat', Math.round((Number(parsed.fat) || 0) * 10) / 10);
-    setVal('fCarbs', Math.round((Number(parsed.carbs) || 0) * 10) / 10);
+    const aiKcal = Math.round(Number(parsed.kcal) || 0);
+    const aiProt = Math.round((Number(parsed.protein) || 0) * 10) / 10;
+    const aiFat  = Math.round((Number(parsed.fat) || 0) * 10) / 10;
+    const aiCarb = Math.round((Number(parsed.carbs) || 0) * 10) / 10;
+    // Add known library values on top of AI result
+    setVal('fKcal', aiKcal + (knownTot ? Math.round(knownTot.kcal) : 0));
+    setVal('fProtein', Math.round((aiProt + (knownTot ? knownTot.protein : 0)) * 10) / 10);
+    setVal('fFat', Math.round((aiFat + (knownTot ? knownTot.fat : 0)) * 10) / 10);
+    setVal('fCarbs', Math.round((aiCarb + (knownTot ? knownTot.carbs : 0)) * 10) / 10);
 
     if(statusEl){
       statusEl.style.color = 'var(--muted)';
-      statusEl.textContent = parsed.antaganden ? 'Antagande: ' + parsed.antaganden : '';
+      const libNote = knownTot ? '✓ Bibliotek: '+partial.known.map(i=>i.amount+'g '+i.entry.name).join('+')+' · ' : '';
+      statusEl.textContent = libNote + (parsed.antaganden ? 'AI: ' + parsed.antaganden : '');
     }
   } catch(e){
     console.error('Quick estimation failed', e);
