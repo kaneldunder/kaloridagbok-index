@@ -339,6 +339,11 @@
   .misslbl small{display:block; font-weight:400; font-size:11px; color:var(--muted); margin-top:1px;}
   .misschips{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; align-items:center;}
   .misshead{display:flex; align-items:flex-start; justify-content:space-between; gap:8px;}
+  .favgroup{ margin-bottom:14px; }
+  .favgrouplbl{
+    font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase;
+    letter-spacing:.08em; margin-bottom:6px; padding-left:2px;
+  }
   .misshide{
     flex-shrink:0; border:none; background:transparent; color:var(--muted);
     font-size:11px; font-weight:600; cursor:pointer; font-family:inherit;
@@ -487,6 +492,7 @@ let state = {
   pantryQuery: '',
   pickerOpen: false,
   pantryEdit: null,
+  favGrouped: true,
   skippedDays: [],
   lastSync: null,
   gh: { owner: '', repo: '', token: '', path: 'kaloridagbok-data.json', branch: 'main', sha: null },
@@ -1453,7 +1459,9 @@ async function renderDay(content){
   };
 
   const showFavBtn = document.getElementById('showFavorites');
-  if(showFavBtn) showFavBtn.onclick = () => { state.openForm = 'favorites'; state.confirmDelFav = null; renderContent(); };
+  if(showFavBtn) showFavBtn.onclick = () => {
+    state.openForm = 'favorites'; state.confirmDelFav = null; state.mealType = null; renderContent();
+  };
 
   content.querySelectorAll('.selstart').forEach(btn => {
     btn.onclick = (e) => {
@@ -1630,6 +1638,9 @@ async function renderDay(content){
     renderContent();
   };
 
+  const toggleFavGroup = document.getElementById('toggleFavGroup');
+  if(toggleFavGroup) toggleFavGroup.onclick = () => { state.favGrouped = !state.favGrouped; renderContent(); };
+
   content.querySelectorAll('.qtybtn').forEach(btn => {
     btn.onclick = () => {
       const i = Number(btn.dataset.idx);
@@ -1655,7 +1666,8 @@ async function renderDay(content){
         protein: Math.round((fav.protein||0) * q * 10)/10,
         fat: Math.round((fav.fat||0) * q * 10)/10,
         carbs: Math.round((fav.carbs||0) * q * 10)/10,
-        time: timeForEntry(q === 1 ? fav.name : q + '× ' + fav.name)
+        time: timeForEntry(q === 1 ? fav.name : q + '× ' + fav.name, state.mealType),
+        ...(state.mealType ? { mealType: state.mealType } : fav.mealType ? { mealType: fav.mealType } : {})
       };
       if(fav.components && fav.components.length){
         entry.components = fav.components.map(c => ({...c, amount: (Number(c.amount)||0) * q}));
@@ -2116,44 +2128,80 @@ function entryRow(item, idx, type){
 }
 
 function favoritesPanel(){
-  if(!state.favorites.length){
-    return `<div class="form"><div class="empty">Inga favoriter sparade än. Kryssa i "Spara som favorit" när du loggar en måltid.</div>
-      <div class="actions"><button class="cancel" id="cancelForm">Tillbaka</button></div></div>`;
-  }
-  return `<div class="form">
-    ${state.favorites.map((f,i)=>{
-      if(state.confirmDelFav === i){
-        return `<div class="entry food confirmdel" style="margin-bottom:8px;">
-          <div>
-            <div class="name">Ta bort "${f.name}"?</div>
-            <div class="sub">Favoriten raderas permanent. Redan loggade måltider påverkas inte.</div>
-          </div>
-          <div class="right">
-            <button class="confirmbtn no" id="cancelDelFav">Avbryt</button>
-            <button class="confirmbtn yes delfav" data-idx="${i}">Ta bort</button>
-          </div>
-        </div>`;
-      }
-      return `<div class="entry food" style="margin-bottom:8px;">
+  const grouped = state.favGrouped;
+  const favs = state.favorites;
+
+  function favCard(f, i){
+    if(state.confirmDelFav === i){
+      return `<div class="entry food confirmdel" style="margin-bottom:8px;">
         <div>
-          <div class="name">${f.name}</div>
-          <div class="sub">${f.components && f.components.length
-            ? f.components.map(c=>c.unit==='st' ? `${Number(c.amount)||0} st ${c.name}` : `${c.name} ${Number(c.amount)||0}g`).join(', ')
-            : `P ${f.protein||0}g · F ${f.fat||0}g · K ${f.carbs||0}g`}</div>
+          <div class="name">Ta bort "${f.name}"?</div>
+          <div class="sub">Favoriten raderas permanent.</div>
         </div>
         <div class="right">
-          <div class="qtypick">
-            <button class="qtybtn" data-idx="${i}" data-dir="-1">−</button>
-            <span class="qtyval" id="favQty_${i}">${favQty(i)}</span>
-            <button class="qtybtn" data-idx="${i}" data-dir="1">+</button>
-          </div>
-          <div class="kcal" id="favKcal_${i}">${Math.round(f.kcal * favQty(i))} kcal</div>
-          <button class="del editfav" data-idx="${i}" title="Redigera favorit">✎</button>
-          <button class="del addfav" data-idx="${i}" title="Lägg till idag">＋</button>
-          <button class="del delfav" data-idx="${i}" title="Ta bort favorit">×</button>
+          <button class="confirmbtn no" id="cancelDelFav">Avbryt</button>
+          <button class="confirmbtn yes delfav" data-idx="${i}">Ta bort</button>
         </div>
       </div>`;
-    }).join('')}
+    }
+    return `<div class="entry food" style="margin-bottom:8px;">
+      <div>
+        <div class="name">${f.name}</div>
+        <div class="sub">${f.components && f.components.length
+          ? f.components.map(c=>c.unit==='st'?`${Number(c.amount)||0} st ${c.name}`:`${c.name} ${Number(c.amount)||0}g`).join(', ')
+          : `P ${f.protein||0}g · F ${f.fat||0}g · K ${f.carbs||0}g`}</div>
+      </div>
+      <div class="right">
+        <div class="qtypick">
+          <button class="qtybtn" data-idx="${i}" data-dir="-1">−</button>
+          <span class="qtyval" id="favQty_${i}">${favQty(i)}</span>
+          <button class="qtybtn" data-idx="${i}" data-dir="1">+</button>
+        </div>
+        <div class="kcal" id="favKcal_${i}">${Math.round(f.kcal * favQty(i))} kcal</div>
+        <button class="del editfav" data-idx="${i}" title="Redigera">✎</button>
+        <button class="del addfav" data-idx="${i}" title="Lägg till idag">＋</button>
+        <button class="del delfav" data-idx="${i}" title="Ta bort">×</button>
+      </div>
+    </div>`;
+  }
+
+  let body = '';
+  if(!favs.length){
+    body = '<div class="empty">Inga favoriter ännu.</div>';
+  } else if(!grouped){
+    body = favs.map((f,i) => favCard(f,i)).join('');
+  } else {
+    // Group by mealType — detect from saved mealType or name
+    const ORDER = ['frukost','lunch','middag','mellanmal','snack','alkohol',null];
+    const groups = {};
+    ORDER.forEach(k => groups[k] = []);
+    favs.forEach((f,i) => {
+      const mt = f.mealType || detectMealType(f.name) || null;
+      const key = ORDER.includes(mt) ? mt : null;
+      groups[key].push({f,i});
+    });
+    const LABELS = {
+      frukost:'Frukost', lunch:'Lunch', middag:'Middag',
+      mellanmal:'Mellanmål', snack:'Snack', alkohol:'Alkohol', null:'Övrigt'
+    };
+    ORDER.forEach(k => {
+      if(!groups[k].length) return;
+      body += `<div class="favgroup">
+        <div class="favgrouplbl">${LABELS[k]}</div>
+        ${groups[k].map(({f,i}) => favCard(f,i)).join('')}
+      </div>`;
+    });
+  }
+
+  return `<div class="form">
+    <div class="mealtypes" style="margin:0 0 12px;">
+      <div class="mtrow">${MEAL_TYPES.slice(0,3).map(m=>`<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
+      <div class="mtrow">${MEAL_TYPES.slice(3).map(m=>`<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
+    </div>
+    <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
+      <button class="misshide" id="toggleFavGroup">${grouped ? '☰ Visa som lista' : '⊞ Visa grupperat'}</button>
+    </div>
+    ${body}
     <div class="actions"><button class="cancel" id="cancelForm">Tillbaka</button></div>
   </div>`;
 }
