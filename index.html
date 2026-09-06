@@ -339,6 +339,10 @@
   .misslbl small{display:block; font-weight:400; font-size:11px; color:var(--muted); margin-top:1px;}
   .misschips{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; align-items:center;}
   .misshead{display:flex; align-items:flex-start; justify-content:space-between; gap:8px;}
+  .converterbox{
+    background:var(--paper); border:1px solid var(--line); border-radius:10px;
+    padding:10px 12px; margin-bottom:10px;
+  }
   .favgroup{ margin-bottom:14px; }
   .favgrouplbl{
     font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase;
@@ -718,6 +722,20 @@ function pantryEditForm(){
       <button class="pe-unit ${!isSt?'active':''}" data-unit="g">Gram</button>
       <button class="pe-unit ${isSt?'active':''}" data-unit="st">Styck</button>
     </div>
+    ${isSt ? `<div class="converterbox">
+      <div class="cmp-note" style="margin:0 0 6px;">
+        Har du värden per 100 g? Ange vikten per styck så räknar appen om.
+      </div>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <div style="flex:1; min-width:100px;">
+          <label style="font-size:9.5px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); display:block; margin-bottom:3px;">Vikt per st (g)</label>
+          <input id="peGperSt" type="number" placeholder="t.ex. 35" style="width:100%; border:1px solid var(--line); border-radius:8px; padding:8px; font-size:14px; font-family:inherit;">
+        </div>
+        <button id="peConvert" class="addbtn" style="flex-shrink:0; margin:0; padding:10px 14px; border-style:solid; background:var(--sage); color:#fff; border-color:var(--sage); align-self:flex-end;">
+          Räkna om
+        </button>
+      </div>
+    </div>` : ''}
     <div style="display:flex; gap:6px; margin:10px 0;">
       <button class="estbtn" id="peEst" style="flex:1;">✨ Uppskatta</button>
       <button class="estbtn" id="peScanBtn" style="flex:1;">📷 Skanna etikett</button>
@@ -3593,6 +3611,26 @@ function renderSettings(content){
       R.proteinPer100 = Number(g('peProtein').value) || 0;
       R.fatPer100 = Number(g('peFat').value) || 0;
       R.carbsPer100 = Number(g('peCarbs').value) || 0;
+    };
+
+    const peConvertBtn = document.getElementById('peConvert');
+    if(peConvertBtn) peConvertBtn.onclick = () => {
+      const gPerSt = Number(document.getElementById('peGperSt').value);
+      if(!gPerSt || gPerSt <= 0) return;
+      const g = id => document.getElementById(id);
+      const kcal100 = Number(g('peKcal').value) || 0;
+      const prot100 = Number(g('peProtein').value) || 0;
+      const fat100  = Number(g('peFat').value) || 0;
+      const carb100 = Number(g('peCarbs').value) || 0;
+      if(!kcal100){ g('peStatus').style.color='var(--rust)'; g('peStatus').textContent='Fyll i kcal/100g först.'; return; }
+      const f = gPerSt / 100;
+      g('peKcal').value    = Math.round(kcal100 * f);
+      g('peProtein').value = Math.round(prot100 * f * 10) / 10;
+      g('peFat').value     = Math.round(fat100  * f * 10) / 10;
+      g('peCarbs').value   = Math.round(carb100 * f * 10) / 10;
+      g('pePortion').value = 1;
+      g('peStatus').style.color = 'var(--sage)';
+      g('peStatus').textContent = `Omräknat: ${gPerSt}g × värdena → per styck. Standardportion = 1 st.`;
     };
 
     content.querySelectorAll('.pe-unit').forEach(b => {
