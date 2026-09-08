@@ -28,19 +28,30 @@
   }
   .display{font-family:Georgia,'Times New Roman',serif;}
   .app{max-width:520px;margin:0 auto;padding:20px 16px 0;}
+  @media(min-width:820px){ .app{max-width:700px;} }
 
-  header.top{padding:4px 4px 18px; display:flex; align-items:center; justify-content:space-between;}
+  header.top{padding:0 2px 14px; display:flex; align-items:flex-start; justify-content:space-between; gap:12px;}
   header.top .apptitle{
-    flex:1; text-align:center; font-size:34px; margin:0; font-weight:600;
-    letter-spacing:-.01em; color:var(--sage);
+    font-size:26px; margin:0 0 3px; font-weight:600;
+    letter-spacing:-.01em; color:var(--sage); text-align:left;
   }
-  .refreshbtn{
-    border:1px solid var(--line); background:#fff; color:var(--muted);
-    width:38px; height:38px; border-radius:50%; font-size:16px; cursor:pointer;
-    flex-shrink:0;
+  .hdr-left{min-width:0;}
+  .hdr-datenav{display:flex; align-items:center; gap:2px; margin-left:-6px;}
+  .hdr-date{font-size:14px; color:var(--muted);}
+  .daynav{
+    border:none; background:transparent; color:var(--muted); font-size:18px;
+    cursor:pointer; padding:0 6px; line-height:1; border-radius:6px;
   }
-  .hdr-spacer{width:38px; flex-shrink:0;}
-  .refreshbtn:disabled{opacity:.5;}
+  .daynav:hover{background:var(--line); color:var(--ink);}
+  .hdr-actions{display:flex; gap:4px; flex-shrink:0;}
+  .iconbtn{
+    border:none; background:transparent; color:var(--muted);
+    width:34px; height:34px; border-radius:10px; font-size:17px; cursor:pointer;
+    flex-shrink:0; display:flex; align-items:center; justify-content:center;
+  }
+  .iconbtn:hover{background:var(--line);}
+  .iconbtn.on{background:var(--sage); color:#fff;}
+  .iconbtn:disabled{opacity:.5;}
   .syncbar{font-size:11.5px; padding:0 4px 12px; min-height:14px;}
 
   nav.tabs{
@@ -84,6 +95,38 @@
   .stat .v{font-size:16px; font-weight:600; margin-top:2px;}
   .stat.rust .v{color:var(--rust);}
   .stat.sage .v{color:var(--sage);}
+
+  .herostatus{flex:1; min-width:0;}
+  .hs-label{
+    font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase;
+    letter-spacing:.09em; margin-bottom:5px;
+  }
+  .hs-line{font-size:16.5px; font-weight:600; color:var(--ink); margin-bottom:11px; line-height:1.25;}
+  .pbar{height:7px; background:var(--line); border-radius:4px; overflow:hidden; margin-bottom:5px;}
+  .pbar i{display:block; height:100%; border-radius:4px; transition:width .3s ease;}
+  .pbar-lbl{font-size:12.5px; color:var(--muted);}
+
+  .heroin{margin-top:14px; padding-top:13px; border-top:1px solid var(--line);}
+  .hirow{display:flex; align-items:center; gap:11px;}
+  .hirow + .hirow{margin-top:11px;}
+  .hicon{
+    width:34px; height:34px; border-radius:10px; display:flex; align-items:center;
+    justify-content:center; font-size:16px; flex-shrink:0;
+  }
+  .hicon.gold{background:#F7F1E3;}
+  .hicon.sage{background:#EDF2EE;}
+  .hitext{flex:1; min-width:0;}
+  .hiname{font-size:13.5px; font-weight:600; color:var(--ink);}
+  .hidelta{font-weight:500; font-size:12px;}
+  .hisub{font-size:11.5px; color:var(--muted); margin-top:1px;}
+  .hinput{
+    width:82px; text-align:right; border:1px solid var(--line); border-radius:9px;
+    padding:9px 10px; font-size:16px; font-weight:600; font-family:inherit;
+    background:var(--paper);
+  }
+  .hinput.gold{color:#8A6D2A;}
+  .hinput.sage{color:var(--sage);}
+  .hinput:focus{outline:none; border-color:var(--sage);}
 
   .macrosplit{margin-top:16px;}
   .msbar{
@@ -815,6 +858,23 @@ function updateMealTotalsDOM(){
   });
 }
 
+/* "Måndag 8 september" — versal begynnelsebokstav. */
+/* "Idag" / "Igår" / "" för äldre datum. */
+function relLabel(d){
+  const a = new Date(d); a.setHours(12,0,0,0);
+  const now = new Date(); now.setHours(12,0,0,0);
+  const diff = Math.round((now - a) / 86400000);
+  if(diff === 0) return 'Idag';
+  if(diff === 1) return 'Igår';
+  if(diff === -1) return 'Imorgon';
+  return '';
+}
+
+function longDateLabel(d){
+  const s = d.toLocaleDateString('sv-SE', { weekday:'long', day:'numeric', month:'long' });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 function ymd(d){
   const y = d.getFullYear();
   const m = String(d.getMonth()+1).padStart(2,'0');
@@ -1011,19 +1071,46 @@ function render(){
   const app = document.getElementById('app');
   app.innerHTML = `
     <header class="top">
-      <div class="hdr-spacer"></div>
-      <h1 class="apptitle display">Kaloridagboken</h1>
-      <button class="refreshbtn" id="refreshAll" title="Hämta senaste data">⟳</button>
+      <div class="hdr-left">
+        <h1 class="apptitle display">Kaloridagboken</h1>
+        ${state.view === 'day' ? `<div class="hdr-datenav">
+          <button class="daynav" id="prevDay" title="Föregående dag">‹</button>
+          <span class="hdr-date">${longDateLabel(state.currentDate)}${relLabel(state.currentDate)?` · ${relLabel(state.currentDate)}`:''}</span>
+          <button class="daynav" id="nextDay" title="Nästa dag">›</button>
+        </div>` : `<div class="hdr-date" style="padding-left:2px;">${
+          {week:'Veckoöversikt',month:'Månadsöversikt',year:'Årsöversikt',settings:'Inställningar'}[state.view] || ''
+        }</div>`}
+      </div>
+      <div class="hdr-actions">
+        <button class="iconbtn" id="refreshAll" title="Hämta senaste data">⟳</button>
+        <button class="iconbtn ${state.view==='settings'?'on':''}" id="openSettings" title="Inställningar">⚙</button>
+      </div>
     </header>
     <div class="syncbar" id="syncBanner">${syncBannerHTML()}</div>
     <nav class="tabs">
-      ${['day','week','month','year','weight','settings'].map(v => `
+      ${['day','week','month','year'].map(v => `
         <button data-view="${v}" class="${state.view===v?'active':''}">
-          ${{day:'Dag',week:'Vecka',month:'Månad',year:'År',weight:'Vikt',settings:'Inst.'}[v]}
+          ${{day:'Dag',week:'Vecka',month:'Månad',year:'År'}[v]}
         </button>`).join('')}
     </nav>
     <div id="content"></div>
   `;
+  const shiftDay = (n) => {
+    state.currentDate.setDate(state.currentDate.getDate() + n);
+    render();          // rubrikens datum
+    renderContent();   // dagens innehåll
+  };
+  const pd = document.getElementById('prevDay');
+  const nd = document.getElementById('nextDay');
+  if(pd) pd.onclick = () => shiftDay(-1);
+  if(nd) nd.onclick = () => shiftDay(1);
+
+  const settingsBtn = document.getElementById('openSettings');
+  if(settingsBtn) settingsBtn.onclick = () => {
+    state.view = state.view === 'settings' ? 'day' : 'settings';
+    renderContent();
+    render();
+  };
   app.querySelectorAll('nav.tabs button').forEach(btn=>{
     btn.onclick = () => {
       const v = btn.dataset.view;
@@ -1281,31 +1368,36 @@ async function renderDay(content){
 
   content.innerHTML = `
     <div class="card">
-      <div class="datebar">
-        <button id="prevDay">‹</button>
-        <div class="label">${label.main}<small>${label.sub}</small></div>
-        <button id="nextDay">›</button>
-      </div>
       <div class="ring-wrap">
         <div class="ring">
-          <svg width="112" height="112">
-            <circle cx="56" cy="56" r="46" stroke="var(--line)" stroke-width="10" fill="none"/>
-            <circle cx="56" cy="56" r="46" stroke="${overGoal?'var(--rust)':'var(--sage)'}" stroke-width="10" fill="none"
-              stroke-dasharray="${circumference}" stroke-dashoffset="${circumference-dash}" stroke-linecap="round"/>
+          <svg width="108" height="108">
+            <circle cx="54" cy="54" r="44" stroke="var(--line)" stroke-width="9" fill="none"/>
+            <circle cx="54" cy="54" r="44" stroke="${overGoal?'var(--rust)':'var(--sage)'}" stroke-width="9" fill="none"
+              stroke-dasharray="${2*Math.PI*44}" stroke-dashoffset="${(2*Math.PI*44)*(1-Math.min(1,Math.max(0,t.net/goal)))}"
+              stroke-linecap="round" transform="rotate(-90 54 54)"/>
           </svg>
           <div class="center">
-            <div class="num">${t.net}</div>
-            <div class="unit">av ${goal} kcal</div>
+            <div class="num" style="color:${remaining>=0?'var(--ink)':'var(--rust)'}">${Math.abs(remaining)}</div>
+            <div class="unit">kcal ${remaining>=0?'kvar':'över'}</div>
           </div>
         </div>
-        <div class="statgrid">
-          <div class="stat rust"><div class="k">Intag</div><div class="v">${t.intake}</div></div>
-          <div class="stat sage"><div class="k">Träning</div><div class="v">−${t.burned}</div></div>
-          <div class="stat"><div class="k">Netto</div><div class="v">${t.net}</div></div>
-          <div class="stat"><div class="k">${remaining>=0?'Kvar':'Över'}</div><div class="v" style="color:${remaining>=0?'var(--sage)':'var(--rust)'}">${Math.abs(remaining)}</div></div>
+        <div class="herostatus">
+          ${(() => {
+            const st = dayStatus(t, goal, remaining);
+            return `<div class="hs-label">${st.label}</div>
+                    <div class="hs-line">${st.line}</div>`;
+          })()}
+          ${(() => {
+            const mt = macroTargets();
+            if(!mt) return '';
+            const pct = Math.min(100, Math.round(t.protein / mt.protein * 100));
+            const hit = t.protein >= mt.protein;
+            return `<div class="pbar"><i style="width:${pct}%; background:${hit?'var(--sage)':'var(--rust)'}"></i></div>
+              <div class="pbar-lbl">Protein ${Math.round(t.protein)} av ${mt.protein} g</div>`;
+          })()}
         </div>
       </div>
-      ${macroSplit(t)}
+      ${heroInputs(data, t)}
     </div>
 
     ${missingDaysNotice()}
@@ -1326,27 +1418,54 @@ async function renderDay(content){
       : (state.editingEntry && state.editingEntry.type==='food' && state.editingEntry.idx===i)
         ? entryEditRow(f,i,'food') : entryRow(f,i,'food')).join('') : `<div class="empty">Inga måltider loggade</div>`}
 
-    <div class="sectitle">Träning & aktivitet</div>
-    ${inBaselineMode() ? activeKcalRow(data) : ''}
-    ${state.openForm === 'exercise' ? exerciseForm()
-      : state.openForm === 'dayEstimate' ? dayEstimatePanel(data)
-      : `<div style="display:flex; gap:8px;">
-          <button class="addbtn exercise" id="addExercise" style="flex:1;">+ Lägg till träning</button>
-          ${inBaselineMode() ? `<button class="addbtn" id="estimateDay" style="flex:1; border-color:var(--gold); color:#8A6D2A;">≈ Uppskatta istället</button>` : ''}
-        </div>`}
     ${(() => {
       const shown = data.exercise.map((e,i)=>({e,i})).filter(x => !(inBaselineMode() && x.e.active));
-      return shown.length ? shown.map(({e,i}) =>
-        (state.editingTime && state.editingTime.type==='exercise' && state.editingTime.idx===i)
-          ? timeEditRow(e,i,'exercise')
-        : (state.editingEntry && state.editingEntry.type==='exercise' && state.editingEntry.idx===i)
-          ? entryEditRow(e,i,'exercise') : entryRow(e,i,'exercise')).join('')
-        : `<div class="empty">Ingen träning loggad</div>`;
+      // I baslinjeläge bor aktiva kalorier i toppkortet — visa sektionen bara om något annat finns
+      if(inBaselineMode() && !shown.length && state.openForm !== 'exercise' && state.openForm !== 'dayEstimate'){
+        return `<button class="addbtn exercise" id="addExercise" style="width:100%;">+ Lägg till ett träningspass</button>`;
+      }
+      return `<div class="sectitle">Träning &amp; aktivitet</div>
+        ${state.openForm === 'exercise' ? exerciseForm()
+          : state.openForm === 'dayEstimate' ? dayEstimatePanel(data)
+          : `<div style="display:flex; gap:8px;">
+              <button class="addbtn exercise" id="addExercise" style="flex:1;">+ Lägg till träning</button>
+              ${inBaselineMode() ? `<button class="addbtn" id="estimateDay" style="flex:1; border-color:var(--gold); color:#8A6D2A;">≈ Uppskatta istället</button>` : ''}
+            </div>`}
+        ${shown.length ? shown.map(({e,i}) =>
+          (state.editingTime && state.editingTime.type==='exercise' && state.editingTime.idx===i)
+            ? timeEditRow(e,i,'exercise')
+          : (state.editingEntry && state.editingEntry.type==='exercise' && state.editingEntry.idx===i)
+            ? entryEditRow(e,i,'exercise') : entryRow(e,i,'exercise')).join('')
+          : `<div class="empty">Ingen träning loggad</div>`}`;
     })()}
   `;
 
-  document.getElementById('prevDay').onclick = () => { state.currentDate.setDate(state.currentDate.getDate()-1); renderContent(); };
-  document.getElementById('nextDay').onclick = () => { state.currentDate.setDate(state.currentDate.getDate()+1); renderContent(); };
+
+  const activeInput = document.getElementById('activeInput');
+  if(activeInput){
+    activeInput.onchange = async () => {
+      const v = Math.max(0, Math.round(Number(activeInput.value.replace(',','.')) || 0));
+      data.exercise = (data.exercise || []).filter(e => !e.active);
+      if(v > 0) data.exercise.push({ name:'Aktiva kalorier', kcal:v, active:true, time:'21:00' });
+      await saveDay(dateStr, data);
+      renderContent();
+    };
+  }
+
+  const weightInput = document.getElementById('weightInput');
+  if(weightInput){
+    weightInput.onchange = async () => {
+      const raw = weightInput.value.replace(',','.').trim();
+      if(!raw){ renderContent(); return; }
+      const kg = Number(raw);
+      if(!isFinite(kg) || kg <= 0 || kg > 400){ renderContent(); return; }
+      const i = state.weights.findIndex(w => w.date === dateStr);
+      if(i >= 0) state.weights[i].kg = kg;
+      else state.weights.push({ date: dateStr, kg });
+      await ghSaveBundle();
+      renderContent();
+    };
+  }
 
   const addFoodBtn = document.getElementById('addFood');
   if(addFoodBtn) addFoodBtn.onclick = () => {
@@ -1359,42 +1478,6 @@ async function renderDay(content){
   };
   const addExBtn = document.getElementById('addExercise');
   if(addExBtn) addExBtn.onclick = () => { state.openForm = 'exercise'; renderContent(); };
-
-  const activeInput = document.getElementById('activeKcal');
-  const activeSave = document.getElementById('saveActiveKcal');
-  if(activeInput && activeSave){
-    const commit = async () => {
-      const v = parseInt(String(activeInput.value).replace(/\D/g,''), 10);
-      data.exercise = data.exercise.filter(e => !e.estimated);
-      if(v > 0) data.exercise.push({ name: 'Aktiva kalorier', kcal: v, estimated: true, time: nowHM() });
-      sortByTime(data.exercise);
-      await saveDay(dateStr, data);
-      renderContent();
-    };
-    activeSave.onclick = commit;
-    activeInput.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); activeInput.blur(); commit(); } };
-  }
-
-  const actInput = document.getElementById('activeKcalInput');
-  const actSave = document.getElementById('activeKcalSave');
-  if(actInput && actSave){
-    const commit = async () => {
-      const v = parseInt(actInput.value.replace(/\D/g,''), 10);
-      // Aktiva kalorier ersätter både tidigare värde och en ev. uppskattning
-      data.exercise = data.exercise.filter(e => !e.active && !e.estimated);
-      if(v > 0) data.exercise.push({ name: 'Aktiva kalorier', kcal: v, active: true, time: nowHM() });
-      sortByTime(data.exercise);
-      await saveDay(dateStr, data);
-      renderContent();
-    };
-    actSave.onclick = commit;
-    actInput.onkeydown = e => { if(e.key === 'Enter'){ e.preventDefault(); actInput.blur(); commit(); } };
-    actInput.oninput = () => {
-      actInput.value = actInput.value.replace(/\D/g,'');
-      actSave.textContent = 'Spara';
-      actSave.classList.add('pending');
-    };
-  }
 
   const estDayBtn = document.getElementById('estimateDay');
   if(estDayBtn) estDayBtn.onclick = () => { state.openForm = 'dayEstimate'; renderContent(); };
@@ -2043,6 +2126,73 @@ async function renderDay(content){
 
 /* Liggande staplat diagram: andel av dagens kalorier per makro.
    Färgerna är kategoriska; måluppfyllelse står i förklaringen under. */
+/* Kort statusrad ovanför proteinstapeln — tolkar dagen istället för att räkna upp den. */
+function dayStatus(t, goal, remaining){
+  const mt = macroTargets();
+  const logged = t.intake > 0;
+  if(!logged) return { label:'Ingen mat loggad', line:'Lägg till dagens första måltid.' };
+  const pct = goal ? t.net / goal : 0;
+  if(remaining < 0)
+    return { label:'Över målet', line:`${Math.abs(remaining)} kcal över planen.` };
+  if(mt && t.protein >= mt.protein && pct <= 1)
+    return { label:'Målen nådda', line:'Både kalorier och protein ligger rätt.' };
+  if(pct > 0.9)
+    return { label:'Nästan i mål', line:'Lite utrymme kvar för kvällen.' };
+  if(mt && t.protein < mt.protein * 0.5 && pct > 0.5)
+    return { label:'Proteinet släpar', line:'Mycket kalorier kvar, lite protein.' };
+  return { label:'På väg enligt plan', line:'Bra balans idag.' };
+}
+
+/* De två raderna man faktiskt fyller i varje dag: aktiva kalorier och vikt. */
+function heroInputs(data, t){
+  const baseline = inBaselineMode();
+  const activeEntry = (data.exercise||[]).find(e => e.active);
+  const activeVal = activeEntry ? activeEntry.kcal : '';
+  const dateStr = ymd(state.currentDate);
+  const wToday = state.weights.find(w => w.date === dateStr);
+  const ws = state.weights.slice().sort((a,b)=>a.date.localeCompare(b.date));
+  const last = ws.length ? ws[ws.length-1] : null;
+  const prev = ws.length > 1 ? ws[ws.length-2] : null;
+  const shownW = wToday ? wToday.kg : (last ? last.kg : '');
+  const delta = (wToday && prev) ? wToday.kg - prev.kg
+              : (!wToday && last && prev) ? last.kg - prev.kg : null;
+  const tw = Number(state.settings.targetWeight) || null;
+  const toGo = (tw && shownW) ? shownW - tw : null;
+  let wNote = '';
+  if(wToday) wNote = 'Idag';
+  else if(last) wNote = daysAgoLabel(last.date);
+  else wNote = 'Ingen vikt loggad';
+  if(toGo !== null && toGo > 0) wNote += ` · ${kgFmt(Math.round(toGo*10)/10)} kg till målet`;
+
+  return `<div class="heroin">
+    ${baseline ? `<div class="hirow">
+      <div class="hicon gold">🔥</div>
+      <div class="hitext">
+        <div class="hiname">Aktiva kalorier</div>
+        <div class="hisub">Från klockan</div>
+      </div>
+      <input type="text" inputmode="numeric" id="activeInput" value="${activeVal}" placeholder="0" class="hinput gold">
+    </div>` : ''}
+    <div class="hirow">
+      <div class="hicon sage">⚖</div>
+      <div class="hitext">
+        <div class="hiname">Vikt${delta !== null ? ` <span class="hidelta" style="color:${delta<=0?'var(--sage)':'var(--rust)'}">${signed(delta,1)}</span>` : ''}</div>
+        <div class="hisub">${wNote}</div>
+      </div>
+      <input type="text" inputmode="decimal" id="weightInput" value="${shownW !== '' ? kgFmt(shownW) : ''}" placeholder="—" class="hinput sage">
+    </div>
+  </div>`;
+}
+
+function daysAgoLabel(dateStr){
+  const d = new Date(dateStr + 'T12:00:00');
+  const now = new Date(); now.setHours(12,0,0,0);
+  const diff = Math.round((now - d) / 86400000);
+  if(diff <= 0) return 'Idag';
+  if(diff === 1) return 'Igår';
+  return `För ${diff} dagar sedan`;
+}
+
 function macroSplit(t){
   const mt = macroTargets();
   const kP = t.protein*4, kF = t.fat*9, kC = t.carbs*4;
@@ -2659,20 +2809,6 @@ async function scanLabel(idx, file){
 
 /* Fast inmatningsrad för aktiva kalorier (baslinjeläge).
    inputmode="numeric" ger numeriskt tangentbord på mobil. */
-function activeKcalRow(data){
-  const existing = data.exercise.find(e => e.estimated);
-  const val = existing ? existing.kcal : '';
-  return `<div class="activerow ${existing?'filled':''}">
-    <label for="activeKcal">Aktiva kalorier<small>från klockan, hela dagen</small></label>
-    <div class="activeinput">
-      <input id="activeKcal" type="text" inputmode="numeric" pattern="[0-9]*"
-        placeholder="0" value="${val}" enterkeyhint="done" autocomplete="off">
-      <span class="unit">kcal</span>
-      <button id="saveActiveKcal">${existing ? 'Uppdatera' : 'Spara'}</button>
-    </div>
-  </div>`;
-}
-
 function dayEstimatePanel(data){
   const bmr = calcBMR(currentWeightKg(), state.settings.height, state.settings.age, state.settings.sex);
   if(!bmr){
@@ -2718,24 +2854,6 @@ function dayEstimatePanel(data){
 
 /* Förinställd rad för aktiva kalorier (visas i baslinjeläge).
    inputmode/pattern gör att mobilen visar sifferknappsats. */
-function activeKcalRow(data){
-  const existing = data.exercise.find(e => e.active);
-  const val = existing ? existing.kcal : '';
-  const saved = !!existing;
-  return `<div class="activerow ${saved?'filled':''}">
-    <div class="activelbl">
-      <b>Aktiva kalorier</b>
-      <small>${saved ? 'Från klockan · tryck för att ändra' : 'Läs av i Träning-appen'}</small>
-    </div>
-    <div class="activeinput">
-      <input id="activeKcalInput" type="text" inputmode="numeric" pattern="[0-9]*"
-        maxlength="4" placeholder="0" value="${val}" enterkeyhint="done">
-      <span class="unit">kcal</span>
-      <button id="activeKcalSave" class="activesave">${saved ? '✓' : 'Spara'}</button>
-    </div>
-  </div>`;
-}
-
 function exerciseForm(){
   return `<div class="form">
     <div class="row"><input id="eName" placeholder="Namn, t.ex. Löpning 5 km"></div>
