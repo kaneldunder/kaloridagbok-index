@@ -96,6 +96,35 @@
   .stat.rust .v{color:var(--rust);}
   .stat.sage .v{color:var(--sage);}
 
+  .linkbtn{
+    border:none; background:transparent; color:var(--muted); font-size:12.5px;
+    cursor:pointer; font-family:inherit; padding:8px 2px 0; display:block;
+  }
+  .linkbtn:hover{color:var(--sage);}
+
+  .sechead{display:flex; align-items:center; justify-content:space-between; gap:10px; margin:20px 0 9px;}
+  .secactions{display:flex; gap:7px;}
+  .secbtn{
+    border:1px solid var(--line); background:var(--card); color:var(--ink);
+    border-radius:10px; padding:8px 12px; font-size:13px; font-weight:600;
+    cursor:pointer; font-family:inherit; white-space:nowrap;
+  }
+  .secbtn:hover{border-color:var(--sage);}
+  .secbtn.primary{background:var(--sage); color:#fff; border-color:var(--sage);}
+
+  .eicon{
+    width:38px; height:38px; border-radius:11px; display:flex; align-items:center;
+    justify-content:center; font-size:17px; flex-shrink:0;
+  }
+  .ename{font-size:15px; font-weight:600; color:var(--ink); line-height:1.3;}
+  .esub{font-size:12.5px; color:var(--muted); margin-top:2px; display:flex; align-items:center; gap:4px; flex-wrap:wrap;}
+  .esub .etime{
+    border:none; background:transparent; color:var(--muted); font-family:inherit;
+    font-size:12.5px; padding:0; cursor:pointer; text-decoration:underline; text-decoration-color:var(--line);
+  }
+  .esub .etime:hover{color:var(--ink);}
+  .entry .kcal{font-size:16px; font-weight:600;}
+
   .herostatus{flex:1; min-width:0;}
   .hs-label{
     font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase;
@@ -1401,23 +1430,24 @@ async function renderDay(content){
     </div>
 
     ${missingDaysNotice()}
-    <div class="sectitle">Måltider</div>
+    <div class="sechead">
+      <div class="sectitle" style="margin:0;">Måltider</div>
+      ${state.openForm ? '' : `<div class="secactions">
+        <button class="secbtn" id="showFavorites">⭐ Favoriter</button>
+        <button class="secbtn primary" id="addFood">+ Lägg till</button>
+      </div>`}
+    </div>
     ${state.selectedEntries.size>0 ? bulkBar() : ''}
     ${state.openForm === 'food' ? foodForm()
       : state.openForm === 'favorites' ? favoritesPanel()
-      : state.openForm === 'copyDay' ? copyDayPanel() : `
-      <div style="display:flex; gap:8px;">
-        <button class="addbtn food" id="addFood" style="flex:1;">+ Lägg till måltid</button>
-        <button class="addbtn" id="showFavorites" style="flex:1; border-color:var(--gold); color:#8A6D2A;">⭐ Favoriter</button>
-      </div>
-      ${copyDayAvailable() ? `<button class="addbtn" id="copyDayBtn" style="width:100%;">⧉ Kopiera en tidigare dag</button>` : ''}
-    `}
+      : state.openForm === 'copyDay' ? copyDayPanel() : ''}
     ${data.food.length ? data.food.map((f,i)=>
       (state.editingTime && state.editingTime.type==='food' && state.editingTime.idx===i)
         ? timeEditRow(f,i,'food')
       : (state.editingEntry && state.editingEntry.type==='food' && state.editingEntry.idx===i)
         ? entryEditRow(f,i,'food') : entryRow(f,i,'food')).join('') : `<div class="empty">Inga måltider loggade</div>`}
 
+    ${!state.openForm && copyDayAvailable() ? `<button class="linkbtn" id="copyDayBtn">⧉ Kopiera en tidigare dag</button>` : ''}
     ${(() => {
       const shown = data.exercise.map((e,i)=>({e,i})).filter(x => !(inBaselineMode() && x.e.active));
       // I baslinjeläge bor aktiva kalorier i toppkortet — visa sektionen bara om något annat finns
@@ -2253,6 +2283,20 @@ function timeEditRow(item, idx, type){
   </div>`;
 }
 
+/* Ikon och färgton per måltidstyp — ger snabb visuell åtskillnad i listan. */
+const MEAL_LOOK = {
+  frukost:   { icon:'☀',  fg:'#4A7C5F', bg:'#EDF2EE' },
+  lunch:     { icon:'🥗', fg:'#3E5C7E', bg:'#EDF0F5' },
+  middag:    { icon:'🍽', fg:'#8A5A3B', bg:'#F5EDE7' },
+  mellanmal: { icon:'🍎', fg:'#6B7B3A', bg:'#F1F4E8' },
+  snack:     { icon:'🍪', fg:'#8A6D2A', bg:'#F7F1E3' },
+  alkohol:   { icon:'🍷', fg:'#7B5EA7', bg:'#F0EBF8' }
+};
+function entryLook(mt, type){
+  if(type === 'exercise') return { icon:'🔥', fg:'#8A6D2A', bg:'#F7F1E3' };
+  return MEAL_LOOK[mt] || { icon:'🍴', fg:'var(--muted)', bg:'var(--paper)' };
+}
+
 function entryRow(item, idx, type){
   let sub = '';
   if(type === 'food'){
@@ -2274,19 +2318,28 @@ function entryRow(item, idx, type){
   const mtTag = mt ? `<span class="mtag" style="color:${mtColor}; background:${mtBg};">${mealTypeLabel(mt)}</span>` : '';
   const selKey = type+':'+idx;
   const selected = state.selectedEntries.has(selKey);
+  const look = entryLook(mt, type);
+  const subText = type === 'food'
+    ? (item.components && item.components.length
+        ? item.components.map(c=>{
+            const amt = Number(c.amount)||0;
+            return c.unit === 'st' ? `${amt} st ${c.name}` : `${c.name} ${amt}g`;
+          }).join(', ')
+        : `P ${item.protein||0} · F ${item.fat||0} · K ${item.carbs||0}`)
+    : '';
   return `<div class="entry ${type} ${selected?'sel-active':''}" data-selkey="${selKey}" data-type="${type}" data-idx="${idx}">
     ${state.selectedEntries.size>0
       ? `<button class="selbtn ${selected?'checked':''}" data-selkey="${selKey}">
           ${selected?'<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="var(--sage)"/><path d="M4.5 8l2.5 2.5 4-4" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>'
             :'<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="var(--line)" stroke-width="1.5"/></svg>'}
         </button>`
-      : ''}
+      : `<div class="eicon" style="background:${look.bg}; color:${look.fg};">${look.icon}</div>`}
     <div style="flex:1; min-width:0;">
-      <div class="name">${time}${mtTag}${item.name}</div>
-      ${sub}
+      <div class="ename">${item.name}</div>
+      <div class="esub">${time}${subText ? ` · ${subText}` : ''}</div>
     </div>
     <div class="right">
-      <div class="kcal">${type==='exercise'?'−':''}${item.kcal} kcal</div>
+      <div class="kcal">${type==='exercise'?'−':''}${item.kcal}</div>
       ${state.selectedEntries.size>0?'':`
         <button class="selstart" data-selkey="${selKey}" title="Markera för flerval">◎</button>
         <button class="editentry" data-type="${type}" data-idx="${idx}" title="Ändra">✎</button>
