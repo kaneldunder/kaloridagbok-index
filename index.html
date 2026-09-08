@@ -1991,7 +1991,7 @@ async function renderDay(content){
       fat: Math.round(t.fat),
       carbs: Math.round(t.carbs),
       components,
-      time: timeForEntry(name, state.mealType),
+      time: (()=>{ const bt=document.getElementById('buildTime'); return bt&&bt.value?bt.value:timeForEntry(name,state.mealType); })(),
       ...(state.mealType ? { mealType: state.mealType } : {})
     };
     if(state.editingFav !== null){
@@ -2253,7 +2253,12 @@ function quickFoodForm(){
       <div class="mtrow">${MEAL_TYPES.slice(3,5).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}
         <button type="button" class="mtbtn ${state.mealType==='alkohol'?'active alkohol':''}" data-mt="alkohol" style="${state.mealType==='alkohol'?'':''}">Alkohol</button></div>
     </div>
-    <div style="display:flex; gap:6px; margin:12px 0;">
+    <div style="display:flex; align-items:center; gap:8px; margin:4px 0 8px;">
+      <label style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); flex-shrink:0;">Tid</label>
+      <input type="time" id="fTime" value="${ymd(state.currentDate)===todayYmd()?nowHM():(state.mealType?MEAL_TYPES.find(m=>m.key===state.mealType)?.time||'12:00':'12:00')}"
+        style="border:1px solid var(--line); border-radius:8px; padding:6px 8px; font-size:14px; font-family:inherit; flex:1;">
+    </div>
+    <div style="display:flex; gap:6px; margin:8px 0;">
       <button class="estbtn" id="quickEstBtn" style="flex:1;">✨ Uppskatta text</button>
       <button class="estbtn" id="quickPhotoBtn" style="flex:1;">📸 Fota maten</button>
     </div>
@@ -2422,6 +2427,11 @@ function buildMealForm(){
       <div class="tot"><span>Fett</span><b id="buildTotFat">${Math.round(t.fat)}g</b></div>
       <div class="tot"><span>Kolh.</span><b id="buildTotCarbs">${Math.round(t.carbs)}g</b></div>
     </div>
+    <div style="display:flex; align-items:center; gap:8px; margin:8px 0 6px;">
+      <label style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); flex-shrink:0;">Tid</label>
+      <input type="time" id="buildTime" value="${ymd(state.currentDate)===todayYmd()?nowHM():(state.mealType?MEAL_TYPES.find(m=>m.key===state.mealType)?.time||'12:00':'12:00')}"
+        style="border:1px solid var(--line); border-radius:8px; padding:6px 8px; font-size:14px; font-family:inherit; flex:1;">
+    </div>
     ${state.editingFav !== null ? '' : `<label style="display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--muted); margin-bottom:10px;">
       <input type="checkbox" id="buildSaveFav" style="width:auto;"> Spara som favorit
     </label>`}
@@ -2456,11 +2466,17 @@ function ingredientRow(row, idx){
     <div class="fieldgrid">
       <div><label>${isSt ? 'Antal (st)' : 'Mängd (g)'}</label>
         <input class="ing-amount" data-idx="${idx}" type="number" step="${isSt?'0.5':'1'}" value="${row.amount}">
-        ${row.portion ? `<div class="amtchips">
+        ${isSt ? `<div class="amtchips">
+          ${[0.5,1,2].map(f => {const a=Math.max(0.5,f); return `<button class="amtchip ${Number(row.amount)===a?'active':''}" data-idx="${idx}" data-amt="${a}">${f===0.5?'½':f}×</button>`;}).join('')}
+        </div>` : row.portion ? `<div class="amtchips">
           ${[0.5,1,2].map(f => `<button class="amtchip ${Number(row.amount)===Math.round(row.portion*f*10)/10?'active':''}" data-idx="${idx}" data-amt="${Math.round(row.portion*f*10)/10}">${f===0.5?'½':f}×</button>`).join('')}
         </div>` : ''}
       </div>
-      <div><label>Kcal ${u}</label><input class="ing-kcal" data-idx="${idx}" type="number" value="${row.kcalPer100}"></div>
+      <div>
+        <label>Kcal ${u}</label>
+        <input class="ing-kcal" data-idx="${idx}" type="number" value="${row.kcalPer100}">
+        ${isSt && row.kcalPer100 > 0 ? `<div style="font-size:10px;color:var(--muted);margin-top:3px;">${Number(row.amount)||1} st = ${ingredientSubKcal(row)} kcal totalt</div>` : ''}
+      </div>
     </div>
     <div class="fieldgrid">
       <div><label>Protein ${u}</label><input class="ing-protein" data-idx="${idx}" type="number" value="${row.proteinPer100}"></div>
@@ -2544,12 +2560,17 @@ async function estimateIngredient(idx){
       messages: [{
         role: "user",
         content: `Du är en näringsdatabas. Texten kan innehålla en mängd: "${raw}".
-Dela upp den i mängd och livsmedel. Välj enhet "g" för sådant som vägs och "st" för sådant som räknas
-(ägg, frukt, portionsbröd, korv med bröd). Vardagsmått som dl, msk och skivor räknas om till gram.
-Anges ingen mängd, föreslå en normal portion.
-Näringsvärdena ska avse PER 100 GRAM om enheten är "g", och PER STYCK om enheten är "st".
-Svara ENDAST med ett JSON-objekt, ingen markdown, inga kodstaket. Format exakt:
-{"namn": string (livsmedlet utan mängd), "unit": "g" | "st", "amount": number, "kcalPer100": number, "proteinPer100": number, "fatPer100": number, "carbsPer100": number, "antagande": string (kort, t.ex. "1 dl ≈ 100 g")}`
+
+Regler:
+1. Dela upp i ANTAL och LIVSMEDEL. Exempel: "2 stekt ägg" → amount=2, namn="stekt ägg"
+2. Enhet "g" för sådant som vägs, "st" för sådant som räknas (ägg, frukt, bröd, korv).
+3. Vardagsmått (dl, msk, skivor) räknas om till gram → enhet "g".
+4. VIKTIGT: kcalPer100 och makron ska ALLTID vara PER 1 ENHET (per 100g om "g", per 1 styck om "st").
+   Aldrig multiplicera med amount. "2 ägg" → amount=2, kcalPer100=90 (för ETT ägg), INTE 180.
+5. Anges ingen mängd: amount=1 (eller normal portion i gram).
+
+Svara ENDAST med JSON, ingen markdown:
+{"namn": string, "unit": "g"|"st", "amount": number, "kcalPer100": number, "proteinPer100": number, "fatPer100": number, "carbsPer100": number, "antagande": string}`
       }]
     });
     const textBlock = (data.content || []).find(b => b.type === 'text');
