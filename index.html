@@ -96,6 +96,35 @@
   .stat.rust .v{color:var(--rust);}
   .stat.sage .v{color:var(--sage);}
 
+  .scalerow{display:flex; align-items:center; gap:5px; margin-bottom:9px; flex-wrap:wrap;}
+  .scalelbl{font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-right:3px;}
+  .scalebtn{
+    border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:8px;
+    padding:6px 11px; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit;
+  }
+  .scalebtn:hover{border-color:var(--sage);}
+  .scalebtn.active{background:var(--sage); color:#fff; border-color:var(--sage);}
+  .scalebtn.plus{border-color:var(--gold); color:#8A6D2A;}
+
+  .compedit{
+    background:var(--paper); border:1px solid var(--line); border-radius:10px;
+    padding:9px 11px; margin-bottom:9px;
+  }
+  .complbl{font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:6px;}
+  .comprow{display:flex; align-items:center; gap:7px; margin-bottom:5px;}
+  .compname{flex:1; min-width:0; font-size:13px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .compamt{
+    width:66px; border:1px solid var(--line); border-radius:7px; padding:5px 7px;
+    font-size:13.5px; font-family:inherit; text-align:right; background:#fff;
+  }
+  .compunit{font-size:11.5px; color:var(--muted); width:16px;}
+  .compkcal{font-size:11.5px; color:var(--muted); width:62px; text-align:right;}
+  .comptot{
+    border-top:1px solid var(--line); margin-top:7px; padding-top:6px;
+    font-size:12.5px; color:var(--muted); text-align:right;
+  }
+  .comptot b{color:var(--ink); font-size:14px;}
+
   .linkbtn{
     border:none; background:transparent; color:var(--muted); font-size:12.5px;
     cursor:pointer; font-family:inherit; padding:8px 2px 0; display:block;
@@ -563,6 +592,7 @@ let state = {
   favQty: {},
   editingTime: null,
   editingEntry: null,
+  editingComps: null,
   selectedEntries: new Set(),
   mealType: null,
   pantryQuery: '',
@@ -1352,6 +1382,51 @@ function bulkBar(){
   </div>`;
 }
 
+/* Skala hela måltiden — "jag åt en till" eller "halva portionen". */
+function portionScaler(item){
+  return `<div class="scalerow">
+    <span class="scalelbl">Portion</span>
+    ${[0.5,1,1.5,2].map(f =>
+      `<button class="scalebtn" data-scale="${f}">${f===0.5?'½':f===1.5?'1½':f}×</button>`).join('')}
+    <button class="scalebtn plus" data-scale="plus">+1</button>
+  </div>`;
+}
+
+/* Justera mängden per ingrediens för byggda måltider. */
+function componentEditor(item){
+  const comps = state.editingComps || item.components;
+  return `<div class="compedit">
+    <div class="complbl">Mängder</div>
+    ${comps.map((c,i) => {
+      const isSt = c.unit === 'st';
+      return `<div class="comprow">
+        <span class="compname">${c.name}</span>
+        <input class="compamt" data-ci="${i}" type="number" step="${isSt?'0.5':'10'}"
+          value="${Number(c.amount)||0}" inputmode="decimal">
+        <span class="compunit">${isSt?'st':'g'}</span>
+        <span class="compkcal" id="compKcal_${i}">${componentKcal(c)} kcal</span>
+      </div>`;
+    }).join('')}
+    <div class="comptot">Totalt <b id="compTotal">${Math.round(comps.reduce((a,c)=>a+componentKcal(c),0))}</b> kcal</div>
+  </div>`;
+}
+
+function componentKcal(c){
+  const amt = Number(c.amount) || 0;
+  const f = c.unit === 'st' ? amt : amt/100;
+  return Math.round(f * (Number(c.kcalPer100) || 0));
+}
+function componentMacros(c){
+  const amt = Number(c.amount) || 0;
+  const f = c.unit === 'st' ? amt : amt/100;
+  return {
+    kcal: f * (Number(c.kcalPer100)||0),
+    protein: f * (Number(c.proteinPer100)||0),
+    fat: f * (Number(c.fatPer100)||0),
+    carbs: f * (Number(c.carbsPer100)||0)
+  };
+}
+
 function entryEditRow(item, idx, type){
   return `<div class="entry ${type} editrow" style="flex-wrap:wrap; gap:8px; align-items:flex-start;">
     <div style="flex:1; min-width:200px;">
@@ -1362,6 +1437,8 @@ function entryEditRow(item, idx, type){
         <div class="mtrow">${MEAL_TYPES.slice(0,3).map(m=>`<button type="button" class="mtbtn ${(item.mealType||detectMealType(item.name))===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
         <div class="mtrow">${MEAL_TYPES.slice(3).map(m=>`<button type="button" class="mtbtn ${(item.mealType||detectMealType(item.name))===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
       </div>` : ''}
+      ${type === 'food' ? portionScaler(item) : ''}
+      ${type === 'food' && item.components && item.components.length ? componentEditor(item) : ''}
       <div class="fieldgrid">
         <div><label>Kcal</label><input id="eeKcal" type="number" value="${item.kcal||0}"
           style="border:1px solid var(--line); border-radius:8px; padding:8px; font-size:14px; font-family:inherit; width:100%;"></div>
@@ -1473,6 +1550,9 @@ async function renderDay(content){
 
   const activeInput = document.getElementById('activeInput');
   if(activeInput){
+    // Markera hela siffran vid fokus så man kan skriva över direkt.
+    // setTimeout krävs för att iOS Safari inte ska nollställa markeringen.
+    activeInput.onfocus = () => setTimeout(() => activeInput.select(), 0);
     activeInput.onchange = async () => {
       const v = Math.max(0, Math.round(Number(activeInput.value.replace(',','.')) || 0));
       data.exercise = (data.exercise || []).filter(e => !e.active);
@@ -1484,6 +1564,7 @@ async function renderDay(content){
 
   const weightInput = document.getElementById('weightInput');
   if(weightInput){
+    weightInput.onfocus = () => setTimeout(() => weightInput.select(), 0);
     weightInput.onchange = async () => {
       const raw = weightInput.value.replace(',','.').trim();
       if(!raw){ renderContent(); return; }
@@ -1669,8 +1750,11 @@ async function renderDay(content){
 
   content.querySelectorAll('.editentry').forEach(btn => {
     btn.onclick = () => {
-      state.editingEntry = { type: btn.dataset.type, idx: Number(btn.dataset.idx) };
+      const t = btn.dataset.type, i = Number(btn.dataset.idx);
+      state.editingEntry = { type: t, idx: i };
       state.editingTime = null;
+      const it = data[t] && data[t][i];
+      state.editingComps = (it && it.components) ? it.components.map(c => ({...c})) : null;
       renderContent();
     };
   });
@@ -1699,8 +1783,77 @@ async function renderDay(content){
     saveFavBtn.disabled=true;
   };
 
+  // Levande omräkning av fälten i redigeringsläget
+  const recalcEdit = () => {
+    const comps = state.editingComps;
+    if(!comps) return;
+    let tot = {kcal:0,protein:0,fat:0,carbs:0};
+    comps.forEach((c,i) => {
+      const m = componentMacros(c);
+      tot.kcal += m.kcal; tot.protein += m.protein; tot.fat += m.fat; tot.carbs += m.carbs;
+      const el = document.getElementById('compKcal_' + i);
+      if(el) el.textContent = Math.round(m.kcal) + ' kcal';
+    });
+    const totEl = document.getElementById('compTotal');
+    if(totEl) totEl.textContent = Math.round(tot.kcal);
+    const set = (id,v) => { const e=document.getElementById(id); if(e) e.value = v; };
+    set('eeKcal', Math.round(tot.kcal));
+    set('eeProtein', Math.round(tot.protein));
+    set('eeFat', Math.round(tot.fat));
+    set('eeCarbs', Math.round(tot.carbs));
+  };
+
+  content.querySelectorAll('.compamt').forEach(inp => {
+    inp.oninput = () => {
+      const i = Number(inp.dataset.ci);
+      if(!state.editingComps || !state.editingComps[i]) return;
+      state.editingComps[i].amount = Number(inp.value) || 0;
+      recalcEdit();
+    };
+  });
+
+  content.querySelectorAll('.scalebtn').forEach(btn => {
+    btn.onclick = () => {
+      const mode = btn.dataset.scale;
+      const g = id => { const e=document.getElementById(id); return e ? Number(e.value)||0 : 0; };
+      const it = state.editingEntry ? (data[state.editingEntry.type]||[])[state.editingEntry.idx] : null;
+      if(!it) return;
+
+      if(state.editingComps){
+        // Byggd måltid: skala varje ingrediens från ursprungsmängden
+        const base = it.components;
+        state.editingComps.forEach((c,i) => {
+          const orig = Number(base[i].amount) || 0;
+          c.amount = mode === 'plus'
+            ? Math.round((Number(c.amount)||0) + orig)
+            : Math.round(orig * Number(mode) * 10) / 10;
+        });
+        content.querySelectorAll('.compamt').forEach(inp => {
+          const i = Number(inp.dataset.ci);
+          inp.value = state.editingComps[i].amount;
+        });
+        recalcEdit();
+      } else {
+        // Enkel post: skala kcal och makron från ursprungsvärdena
+        const f = mode === 'plus' ? null : Number(mode);
+        const set = (id, base) => {
+          const e = document.getElementById(id); if(!e) return;
+          e.value = mode === 'plus'
+            ? Math.round((Number(e.value)||0) + base)
+            : Math.round(base * f * 10) / 10;
+        };
+        set('eeKcal', it.kcal||0);
+        set('eeProtein', it.protein||0);
+        set('eeFat', it.fat||0);
+        set('eeCarbs', it.carbs||0);
+      }
+      content.querySelectorAll('.scalebtn').forEach(b =>
+        b.classList.toggle('active', b === btn && mode !== 'plus'));
+    };
+  });
+
   const cancelEntry = document.getElementById('cancelEntry');
-  if(cancelEntry) cancelEntry.onclick = () => { state.editingEntry = null; renderContent(); };
+  if(cancelEntry) cancelEntry.onclick = () => { state.editingEntry = null; state.editingComps = null; renderContent(); };
 
   const saveEntry = document.getElementById('saveEntry');
   if(saveEntry) saveEntry.onclick = async () => {
@@ -1717,13 +1870,14 @@ async function renderDay(content){
       item.protein = Number(g('eeProtein')) || 0;
       item.fat     = Number(g('eeFat'))     || 0;
       item.carbs   = Number(g('eeCarbs'))   || 0;
-      // Meal type: read the active button in the edit row
+      if(state.editingComps) item.components = state.editingComps.map(c => ({...c}));
       const activeMt = document.querySelector('.entry.editrow .mtbtn.active');
       if(activeMt) item.mealType = activeMt.dataset.mt;
       else if(!item.mealType) item.mealType = detectMealType(item.name) || null;
     }
     await saveDay(dateStr, data);
     state.editingEntry = null;
+    state.editingComps = null;
     renderContent();
   };
 
