@@ -96,6 +96,14 @@
   .stat.rust .v{color:var(--rust);}
   .stat.sage .v{color:var(--sage);}
 
+  .splitbtn{
+    width:100%; border:1px dashed var(--line); background:var(--paper); color:var(--muted);
+    border-radius:9px; padding:9px; font-size:12.5px; font-weight:600;
+    cursor:pointer; font-family:inherit; margin-bottom:9px;
+  }
+  .splitbtn:hover{border-color:var(--sage); color:var(--sage);}
+  .splitbtn:disabled{opacity:.6;}
+
   .scalerow{display:flex; align-items:center; gap:5px; margin-bottom:9px; flex-wrap:wrap;}
   .scalelbl{font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-right:3px;}
   .scalebtn{
@@ -593,6 +601,7 @@ let state = {
   editingTime: null,
   editingEntry: null,
   editingComps: null,
+  splitNote: null,
   selectedEntries: new Set(),
   mealType: null,
   pantryQuery: '',
@@ -1394,9 +1403,10 @@ function portionScaler(item){
 
 /* Justera mängden per ingrediens för byggda måltider. */
 function componentEditor(item){
-  const comps = state.editingComps || item.components;
+  const comps = state.editingComps || item.components || [];
+  if(!comps.length) return '';
   return `<div class="compedit">
-    <div class="complbl">Mängder</div>
+    <div class="complbl">Mängder${state.splitNote ? ` · <span style="text-transform:none; letter-spacing:0;">${state.splitNote}</span>` : ''}</div>
     ${comps.map((c,i) => {
       const isSt = c.unit === 'st';
       return `<div class="comprow">
@@ -1438,7 +1448,10 @@ function entryEditRow(item, idx, type){
         <div class="mtrow">${MEAL_TYPES.slice(3).map(m=>`<button type="button" class="mtbtn ${(item.mealType||detectMealType(item.name))===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
       </div>` : ''}
       ${type === 'food' ? portionScaler(item) : ''}
-      ${type === 'food' && item.components && item.components.length ? componentEditor(item) : ''}
+      ${type === 'food' && (state.editingComps || (item.components && item.components.length))
+        ? componentEditor(item)
+        : type === 'food' ? `<button class="splitbtn" id="splitEntry">⁂ Dela upp i ingredienser</button>
+            <div class="est-status" id="splitStatus"></div>` : ''}
       <div class="fieldgrid">
         <div><label>Kcal</label><input id="eeKcal" type="number" value="${item.kcal||0}"
           style="border:1px solid var(--line); border-radius:8px; padding:8px; font-size:14px; font-family:inherit; width:100%;"></div>
@@ -1755,6 +1768,7 @@ async function renderDay(content){
       state.editingTime = null;
       const it = data[t] && data[t][i];
       state.editingComps = (it && it.components) ? it.components.map(c => ({...c})) : null;
+      state.splitNote = null;
       renderContent();
     };
   });
@@ -1852,8 +1866,56 @@ async function renderDay(content){
     };
   });
 
+  const splitBtn = document.getElementById('splitEntry');
+  if(splitBtn) splitBtn.onclick = async () => {
+    const it = state.editingEntry ? (data[state.editingEntry.type]||[])[state.editingEntry.idx] : null;
+    if(!it) return;
+    const st = document.getElementById('splitStatus');
+    const nameNow = (document.getElementById('eeName')||{}).value || it.name;
+    splitBtn.disabled = true; splitBtn.textContent = 'Delar upp…';
+    if(st){ st.style.color = 'var(--muted)'; st.textContent = ''; }
+    try{
+      const res = await callAnthropic({
+        model: "claude-sonnet-4-6",
+        max_tokens: 700,
+        messages: [{ role: "user", content:
+`Dela upp denna loggade måltid i sina ingredienser: "${nameNow}"
+Måltidens registrerade värden: ${it.kcal} kcal, protein ${it.protein||0} g, fett ${it.fat||0} g, kolhydrater ${it.carbs||0} g.
+
+Regler:
+1. Läs ut mängd och livsmedel för varje del. Enhet "g" för sådant som vägs, "st" för sådant som räknas.
+2. Näringsvärdena ska vara PER 100 GRAM om enheten är "g", och PER STYCK om enheten är "st" — aldrig multiplicerat med mängden.
+3. Delarnas summa ska hamna nära de registrerade värdena ovan. Justera rimliga mängder så att det stämmer.
+4. Anges ingen mängd för en del, uppskatta en rimlig portion.
+
+Svara ENDAST med JSON, ingen markdown:
+{"delar":[{"name":string,"unit":"g"|"st","amount":number,"kcalPer100":number,"proteinPer100":number,"fatPer100":number,"carbsPer100":number}]}` }]
+      });
+      const tb = (res.content||[]).find(b => b.type === 'text');
+      if(!tb) throw new Error('Tomt svar');
+      const parsed = JSON.parse(tb.text.replace(/```json|```/g,'').trim());
+      const comps = (parsed.delar||[]).map(c => ({
+        name: String(c.name||'').trim(),
+        unit: c.unit === 'st' ? 'st' : 'g',
+        amount: Number(c.amount) || 0,
+        kcalPer100: Math.round(Number(c.kcalPer100)||0),
+        proteinPer100: Math.round((Number(c.proteinPer100)||0)*10)/10,
+        fatPer100: Math.round((Number(c.fatPer100)||0)*10)/10,
+        carbsPer100: Math.round((Number(c.carbsPer100)||0)*10)/10
+      })).filter(c => c.name && c.amount > 0);
+      if(!comps.length) throw new Error('Inga delar hittades');
+      const sum = comps.reduce((a,c)=>a+componentKcal(c),0);
+      state.editingComps = comps;
+      state.splitNote = `Uppdelad i ${comps.length} delar · ${Math.round(sum)} kcal (loggat: ${it.kcal})`;
+      renderContent();
+    }catch(e){
+      if(st){ st.style.color = 'var(--rust)'; st.textContent = 'Kunde inte dela upp: ' + (e.message||'okänt fel'); }
+      splitBtn.disabled = false; splitBtn.textContent = '⁂ Dela upp i ingredienser';
+    }
+  };
+
   const cancelEntry = document.getElementById('cancelEntry');
-  if(cancelEntry) cancelEntry.onclick = () => { state.editingEntry = null; state.editingComps = null; renderContent(); };
+  if(cancelEntry) cancelEntry.onclick = () => { state.editingEntry = null; state.editingComps = null; state.splitNote = null; renderContent(); };
 
   const saveEntry = document.getElementById('saveEntry');
   if(saveEntry) saveEntry.onclick = async () => {
@@ -1878,6 +1940,7 @@ async function renderDay(content){
     await saveDay(dateStr, data);
     state.editingEntry = null;
     state.editingComps = null;
+    state.splitNote = null;
     renderContent();
   };
 
