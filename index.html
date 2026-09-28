@@ -96,6 +96,43 @@
   .stat.rust .v{color:var(--rust);}
   .stat.sage .v{color:var(--sage);}
 
+  .qparts{
+    background:var(--paper); border:1px solid var(--line); border-radius:10px;
+    padding:9px 11px; margin:8px 0 4px;
+  }
+  .qpartshead{
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:10px; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--muted); margin-bottom:7px;
+  }
+  .qpclear{
+    border:none; background:transparent; color:var(--muted); font-size:11px;
+    cursor:pointer; font-family:inherit; text-transform:none; letter-spacing:0; padding:0;
+  }
+  .qpclear:hover{color:var(--rust);}
+  .qprow{display:flex; align-items:center; gap:7px; margin-bottom:5px;}
+  .qpsrc{
+    width:15px; height:15px; border-radius:5px; flex-shrink:0; font-size:9.5px;
+    font-weight:700; display:flex; align-items:center; justify-content:center;
+  }
+  .qpsrc.lib{background:#EDF2EE; color:var(--sage);}
+  .qpsrc.ai{background:#F7F1E3; color:#8A6D2A;}
+  .qpname{flex:1 1 auto; min-width:0; font-size:13px; color:var(--ink);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .qparts .qpamt{
+    flex:0 0 62px; width:62px; min-width:0; box-sizing:border-box;
+    border:1px solid var(--line); border-radius:7px; padding:5px 7px;
+    font-size:13px; font-family:inherit; text-align:right; background:#fff;
+  }
+  .qpunit{font-size:11px; color:var(--muted); width:14px;}
+  .qpkcal{font-size:12.5px; font-weight:600; color:var(--ink); width:46px; text-align:right;}
+  .qptot{
+    border-top:1px solid var(--line); margin-top:7px; padding-top:6px;
+    font-size:12.5px; color:var(--muted); text-align:right;
+  }
+  .qptot b{color:var(--ink); font-size:14px;}
+  .qpnote{font-size:11px; color:var(--muted); margin-top:5px; line-height:1.45;}
+
   .splitbtn{
     width:100%; border:1px dashed var(--line); background:var(--paper); color:var(--muted);
     border-radius:9px; padding:9px; font-size:12.5px; font-weight:600;
@@ -120,9 +157,10 @@
   }
   .complbl{font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:6px;}
   .comprow{display:flex; align-items:center; gap:7px; margin-bottom:5px;}
-  .compname{flex:1; min-width:0; font-size:13px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .compamt{
-    width:66px; border:1px solid var(--line); border-radius:7px; padding:5px 7px;
+  .compname{flex:1 1 auto; min-width:0; font-size:13px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .compedit .compamt{
+    flex:0 0 66px; width:66px; min-width:0; box-sizing:border-box;
+    border:1px solid var(--line); border-radius:7px; padding:5px 7px;
     font-size:13.5px; font-family:inherit; text-align:right; background:#fff;
   }
   .compunit{font-size:11.5px; color:var(--muted); width:16px;}
@@ -602,6 +640,8 @@ let state = {
   editingEntry: null,
   editingComps: null,
   splitNote: null,
+  quickParts: null,
+  quickNote: null,
   selectedEntries: new Set(),
   mealType: null,
   pantryQuery: '',
@@ -668,23 +708,58 @@ function unitLabel(row){
 
 /* ---- Livsmedelsbibliotek ---- */
 function normName(s){ return (s||'').trim().toLowerCase(); }
+/* Ord som aldrig ska styra en biblioteksträff på egen hand. */
+const LOOKUP_STOPWORDS = new Set([
+  'med','och','samt','en','ett','lite','till','av','på','i','plus','extra','ca','cirka'
+]);
+function nameWords(s){
+  return normName(s).split(/[^a-zA-ZåäöÅÄÖ0-9]+/).filter(Boolean);
+}
+/* Sant bara när alla sökord finns som HELA ord i rad i namnet.
+   "ost" matchar alltså inte "majskakor med ostsmak". */
+function wordRunMatch(haystack, needle){
+  const H = nameWords(haystack), N = nameWords(needle);
+  if(!N.length || N.length > H.length) return false;
+  for(let i = 0; i <= H.length - N.length; i++){
+    let ok = true;
+    for(let j = 0; j < N.length; j++){ if(H[i+j] !== N[j]){ ok = false; break; } }
+    if(ok) return true;
+  }
+  return false;
+}
+/* Ett ensamt kort ord duger inte som sökterm — för lätt att träffa fel. */
+function usableLookupTerm(name){
+  const w = nameWords(name).filter(x => !LOOKUP_STOPWORDS.has(x) && !/^\d+$/.test(x));
+  if(!w.length) return null;
+  if(w.length === 1 && w[0].length < 4) return null;
+  return w.join(' ');
+}
 function findInPantry(name, unit){
   const n = normName(name);
   if(!n) return null;
   const byUnit = (p) => !unit || p.unit === unit;
-  // 1. Exakt match
+  // 1. Exakt match — alltid tillåten, även för korta namn som "ris"
   const exact = state.pantry.find(p => normName(p.name) === n && byUnit(p));
   if(exact) return exact;
-  // 2. Det sökta finns i biblioteksnamnet ("Grekisk yoghurt" → "Arla Grekisk Yoghurt")
-  const contains = state.pantry.find(p => normName(p.name).includes(n) && byUnit(p));
+  const exactAny = state.pantry.find(p => normName(p.name) === n);
+  if(exactAny) return exactAny;
+
+  // Därefter krävs en sökterm som duger
+  const term = usableLookupTerm(n);
+  if(!term) return null;
+
+  // 2. Söktermen finns som hela ord i biblioteksnamnet
+  //    ("grekisk yoghurt" → "Arla Grekisk Yoghurt")
+  const contains = state.pantry.find(p => wordRunMatch(p.name, term) && byUnit(p))
+                || state.pantry.find(p => wordRunMatch(p.name, term));
   if(contains) return contains;
-  // 3. Biblioteksnamnet finns i det sökta ("Arla Grekisk Yoghurt" → "200 g Arla Grekisk Yoghurt")
-  const contained = state.pantry.find(p => n.includes(normName(p.name)) && normName(p.name).length > 3 && byUnit(p));
-  if(contained) return contained;
-  // 4. Fallback utan enhetsfilter
-  return state.pantry.find(p => normName(p.name) === n)
-      || state.pantry.find(p => normName(p.name).includes(n))
-      || null;
+
+  // 3. Biblioteksnamnet finns som hela ord i söktermen
+  //    ("200 g Arla Grekisk Yoghurt" → "Arla Grekisk Yoghurt")
+  const contained = state.pantry.find(p =>
+    nameWords(p.name).length >= 2 && wordRunMatch(term, p.name) && byUnit(p))
+    || state.pantry.find(p => nameWords(p.name).length >= 2 && wordRunMatch(term, p.name));
+  return contained || null;
 }
 function pantryHasExact(row){
   const p = findInPantry(row.name, row.unit);
@@ -755,21 +830,58 @@ function parseQuantityAnywhere(text){
    Om en del är okänd returneras null och AI tar hela texten. */
 /* Partiell uppslag: kända delar från biblioteket + mängd för okända.
    Returnerar { known, unknownText } eller null om ingenting hittas. */
+/* Gör om en textbit till { entry, amount, unit } om den finns i biblioteket. */
+/* Mängd- och enhetsord som inte säger något om vilket livsmedel det är. */
+const FILLER_WORDS = new Set([
+  'g','gram','gr','kg','hg','st','styck','stycken','dl','cl','ml','l',
+  'msk','tsk','skiva','skivor','liten','litet','stor','stort','rund','runt'
+]);
+function contentWords(s){
+  return nameWords(s).filter(w =>
+    !LOOKUP_STOPWORDS.has(w) && !FILLER_WORDS.has(w) && !/^\d+$/.test(w));
+}
+/* Sant när biblioteksvaran förklarar varje betydelsebärande ord i texten. */
+function entryCoversText(text, entry){
+  const have = new Set(contentWords(entry.name));
+  return contentWords(text).every(w => have.has(w));
+}
+
+function lookupPart(part){
+  const q = parseQuantityAnywhere(part);
+  const entry = findInPantry(q ? q.name : part) || findInPantry(part);
+  if(!entry) return null;
+  const unit = entry.unit;
+  const amount = (q && ((q.unit === 'st') === (unit === 'st')))
+    ? q.amount
+    : (Number(entry.portion) || (unit === 'st' ? 1 : 100));
+  return { entry, amount, unit };
+}
+
 function pantryPartialLookup(text){
-  const parts = (text||'').split(/\s*(?:,|\boch\b|\bmed\b|\+|&)\s*/i).map(x=>x.trim()).filter(Boolean);
-  if(!parts.length) return null;
+  const raw = (text||'').trim();
+  if(!raw) return null;
   const known=[], unknown=[];
-  for(const part of parts){
-    const q = parseQuantityAnywhere(part);
-    const nameGuess = q ? q.name : part;
-    const entry = findInPantry(nameGuess) || findInPantry(part);
-    if(entry){
-      const unit = entry.unit;
-      const amount = (q && ((q.unit==='st')===(unit==='st'))) ? q.amount
-        : (Number(entry.portion)||(unit==='st'?1:100));
-      known.push({ entry, amount, unit });
-    } else {
-      unknown.push(part);
+
+  // Hela texten kan vara ett enda livsmedel vars NAMN innehåller "med"
+  // ("majskakor med ostsmak 30 g") — pröva den odelad först, men bara om
+  // varan täcker HELA texten. Annars skulle "riven ost och 2 frallor"
+  // svälja frallorna.
+  const whole = lookupPart(raw);
+  if(whole && entryCoversText(raw, whole.entry)){
+    known.push(whole);
+  } else {
+    const parts = raw.split(/\s*(?:,|\boch\b|\bmed\b|\+|&)\s*/i).map(x=>x.trim()).filter(Boolean);
+    if(!parts.length) return null;
+    for(const part of parts){
+      const hit = lookupPart(part);
+      if(hit){
+        // Samma vara två gånger betyder nästan alltid att delningen skar
+        // mitt i ett produktnamn — räkna den bara en gång.
+        if(known.some(k => k.entry === hit.entry)) continue;
+        known.push(hit);
+      } else {
+        unknown.push(part);
+      }
     }
   }
   if(!known.length) return null;
@@ -1593,6 +1705,7 @@ async function renderDay(content){
 
   const addFoodBtn = document.getElementById('addFood');
   if(addFoodBtn) addFoodBtn.onclick = () => {
+    state.quickParts = null; state.quickNote = null;
     state.openForm = 'food';
     state.mealType = null;
     state.editingFav = null;
@@ -2080,6 +2193,8 @@ Svara ENDAST med JSON, ingen markdown:
     renderContent();
   };
 
+  wireQuickParts();
+
   const saveFoodBtn = document.getElementById('saveFood');
   if(saveFoodBtn) saveFoodBtn.onclick = async () => {
     // Namn valfritt: faller tillbaka på måltidstypen
@@ -2098,7 +2213,16 @@ Svara ENDAST med JSON, ingen markdown:
       renderContent();
       return;
     }
-    data.food.push({ name, kcal, protein, fat, carbs, time: timeForEntry(name, state.mealType),
+    const fTimeEl = document.getElementById('fTime');
+    const fTimeVal = (fTimeEl && fTimeEl.value) ? fTimeEl.value : timeForEntry(name, state.mealType);
+    // Delarna följer med så posten går att justera per ingrediens senare
+    const qp = (state.quickParts && state.quickParts.length)
+      ? state.quickParts.map(c => ({ name:c.name, unit:c.unit, amount:c.amount,
+          kcalPer100:c.kcalPer100, proteinPer100:c.proteinPer100,
+          fatPer100:c.fatPer100, carbsPer100:c.carbsPer100 }))
+      : null;
+    data.food.push({ name, kcal, protein, fat, carbs, time: fTimeVal,
+      ...(qp ? { components: qp } : {}),
       ...(state.mealType ? { mealType: state.mealType } : {}) });
     sortByTime(data.food);
     await saveDay(dateStr, data);
@@ -2684,6 +2808,7 @@ function quickFoodForm(){
     </div>
     <input type="file" accept="image/*" capture="environment" id="quickPhotoInput" style="display:none">
     <div class="est-status" id="quickEstStatus"></div>
+    ${quickPartsBlock()}
     <div class="fieldgrid">
       <div><label>Kcal</label><input id="fKcal" type="number" placeholder="0" value="${v('kcal')}"></div>
       <div><label>Protein (g)</label><input id="fProtein" type="number" placeholder="0" value="${v('protein')}"></div>
@@ -2724,6 +2849,8 @@ async function estimateMealPhoto(file){
     if(!textBlock) throw new Error('Tomt svar från modellen');
     const p = JSON.parse(textBlock.text.replace(/```json|```/g, '').trim());
 
+    // Fotot ersätter en tidigare textuppskattning — släng gamla delar
+    if(state.quickParts){ state.quickParts = null; state.quickNote = null; paintQuickParts(); }
     const setVal = (id, v) => { const el = document.getElementById(id); if(el) el.value = v; };
     const nameEl = document.getElementById('fName');
     if(nameEl && !nameEl.value.trim() && p.namn) nameEl.value = p.namn;
@@ -2758,71 +2885,175 @@ async function estimateQuickMeal(){
     if(statusEl){ statusEl.style.color = 'var(--rust)'; statusEl.textContent = 'Beskriv måltiden först, t.ex. "2 ägg och en banan".'; }
     return;
   }
-  // Kolla biblioteket först — partiell träff: kända delar från biblioteket, okända till AI
+
+  const applyParts = (parts, note) => {
+    state.quickParts = parts;
+    state.quickNote = note || null;
+    const st = document.getElementById('quickEstStatus');
+    if(st) st.textContent = '';
+    paintQuickParts();
+    syncQuickTotals();
+  };
+
+  // Biblioteket först — kända delar kostar inget och har dina egna värden
   const partial = pantryPartialLookup(desc);
+  const libParts = partial ? partial.known.map(i => ({
+    name: i.entry.name, unit: i.unit, amount: i.amount,
+    kcalPer100: i.entry.kcalPer100, proteinPer100: i.entry.proteinPer100,
+    fatPer100: i.entry.fatPer100, carbsPer100: i.entry.carbsPer100,
+    src: 'lib'
+  })) : [];
+
   if(partial && !partial.unknown.length){
-    // Alla delar hittades i biblioteket — inget AI-anrop
-    const t = partial.totals;
-    const setV = (id,v) => { const e=document.getElementById(id); if(e) e.value=v; };
-    setV('fKcal', Math.round(t.kcal));
-    setV('fProtein', Math.round(t.protein*10)/10);
-    setV('fFat', Math.round(t.fat*10)/10);
-    setV('fCarbs', Math.round(t.carbs*10)/10);
-    if(statusEl){
-      statusEl.style.color = 'var(--sage)';
-      statusEl.textContent = '✓ Från ditt bibliotek: ' + partial.known
-        .map(i => `${i.amount}${i.unit==='st'?' st':' g'} ${i.entry.name}`).join(' + ');
-    }
     partial.known.forEach(i => { i.entry.lastUsed = Date.now(); });
     ghSaveBundle();
+    applyParts(libParts, null);
     return;
   }
 
-  // Om delar hittades i biblioteket, låt AI bara uppskatta de okända
-  const knownTot = partial ? partial.totals : null;
   const aiDesc = (partial && partial.unknown.length) ? partial.unknown.join(' och ') : desc;
-  const knownNote = knownTot ? ` (OBS: ${partial.known.map(i=>`${i.amount}g ${i.entry.name}`).join('+')} är redan känt med ${Math.round(knownTot.kcal)} kcal, ${Math.round(knownTot.protein)}g protein — uppskatta BARA de okända delarna)` : '';
   if(btn){ btn.disabled = true; btn.textContent = 'Uppskattar…'; }
   if(statusEl) statusEl.textContent = '';
   try{
     const data = await callAnthropic({
       model: "claude-sonnet-4-6",
-      max_tokens: 400,
+      max_tokens: 700,
       messages: [{
         role: "user",
-        content: `Du är en näringsdatabas. Uppskatta TOTALT näringsinnehåll för: "${aiDesc}"${knownNote}. Om mängder anges i styck eller vardagliga mått, utgå från typiska svenska normalstorlekar. Anta vanligast förekommande beredning. Svara ENDAST med ett JSON-objekt, inga förklaringar, ingen markdown, inga kodstaket. Format exakt: {"kcal": number, "protein": number, "fat": number, "carbs": number, "antaganden": "kort text om vilka storlekar du utgått från"}`
+        content: `Du är en näringsdatabas. Dela upp denna måltid i sina delar och uppskatta varje del: "${aiDesc}"
+
+Regler:
+1. En rad per livsmedel. Enhet "g" för sådant som vägs, "st" för sådant som räknas (ägg, frukt, frallor, skivor).
+2. Näringsvärdena ska vara PER 100 GRAM om enheten är "g", och PER STYCK om enheten är "st" — aldrig multiplicerat med mängden.
+3. Anges ingen mängd, utgå från typisk svensk normalstorlek.
+4. Anta vanligast förekommande beredning.
+
+Svara ENDAST med JSON, inga förklaringar, ingen markdown:
+{"delar":[{"name":string,"unit":"g"|"st","amount":number,"kcalPer100":number,"proteinPer100":number,"fatPer100":number,"carbsPer100":number}],"antaganden":"kort text"}`
       }]
     });
     const textBlock = (data.content || []).find(b => b.type === 'text');
     if(!textBlock) throw new Error('Tomt svar från modellen');
     const parsed = JSON.parse(textBlock.text.replace(/```json|```/g, '').trim());
-
-    const setVal = (id, v) => { const el = document.getElementById(id); if(el) el.value = v; };
-    const aiKcal = Math.round(Number(parsed.kcal) || 0);
-    const aiProt = Math.round((Number(parsed.protein) || 0) * 10) / 10;
-    const aiFat  = Math.round((Number(parsed.fat) || 0) * 10) / 10;
-    const aiCarb = Math.round((Number(parsed.carbs) || 0) * 10) / 10;
-    // Add known library values on top of AI result
-    setVal('fKcal', aiKcal + (knownTot ? Math.round(knownTot.kcal) : 0));
-    setVal('fProtein', Math.round((aiProt + (knownTot ? knownTot.protein : 0)) * 10) / 10);
-    setVal('fFat', Math.round((aiFat + (knownTot ? knownTot.fat : 0)) * 10) / 10);
-    setVal('fCarbs', Math.round((aiCarb + (knownTot ? knownTot.carbs : 0)) * 10) / 10);
-
-    if(statusEl){
-      statusEl.style.color = 'var(--muted)';
-      const libNote = knownTot ? '✓ Bibliotek: '+partial.known.map(i=>i.amount+'g '+i.entry.name).join('+')+' · ' : '';
-      statusEl.textContent = libNote + (parsed.antaganden ? 'AI: ' + parsed.antaganden : '');
+    const aiParts = (parsed.delar || []).map(c => ({
+      name: String(c.name||'').trim(),
+      unit: c.unit === 'st' ? 'st' : 'g',
+      amount: Number(c.amount) || 0,
+      kcalPer100: Math.round(Number(c.kcalPer100)||0),
+      proteinPer100: Math.round((Number(c.proteinPer100)||0)*10)/10,
+      fatPer100: Math.round((Number(c.fatPer100)||0)*10)/10,
+      carbsPer100: Math.round((Number(c.carbsPer100)||0)*10)/10,
+      src: 'ai'
+    })).filter(c => c.name && c.amount > 0);
+    if(!aiParts.length){
+      // Svarade modellen ändå med en klumpsumma, använd den som en enda del
+      const k = Number(parsed.kcal);
+      if(!isFinite(k) || k <= 0) throw new Error('Inga delar i svaret');
+      aiParts.push({
+        name: aiDesc.length > 40 ? aiDesc.slice(0,40) + '…' : aiDesc,
+        unit: 'g', amount: 100,
+        kcalPer100: Math.round(k),
+        proteinPer100: Math.round((Number(parsed.protein)||0)*10)/10,
+        fatPer100: Math.round((Number(parsed.fat)||0)*10)/10,
+        carbsPer100: Math.round((Number(parsed.carbs)||0)*10)/10,
+        src: 'ai'
+      });
     }
+    libParts.forEach(i => {
+      const e = findInPantry(i.name, i.unit);
+      if(e) e.lastUsed = Date.now();
+    });
+    if(libParts.length) ghSaveBundle();
+    applyParts(libParts.concat(aiParts), parsed.antaganden || null);
   } catch(e){
     console.error('Quick estimation failed', e);
-    if(statusEl){
-      statusEl.style.color = 'var(--rust)';
-      statusEl.textContent = 'Fel: ' + (e && e.message ? e.message : 'okänt fel') + '. Fyll i manuellt.';
+    const st = document.getElementById('quickEstStatus');
+    if(st){
+      st.style.color = 'var(--rust)';
+      st.textContent = 'Fel: ' + (e && e.message ? e.message : 'okänt fel') + '. Fyll i manuellt.';
     }
   } finally {
-    if(btn){ btn.disabled = false; btn.textContent = '✨ Uppskatta text'; }
+    const b2 = document.getElementById('quickEstBtn');
+    if(b2){ b2.disabled = false; b2.textContent = '✨ Uppskatta text'; }
   }
 }
+
+/* Ritar in delarna utan att röra resten av formuläret — en omrendering
+   skulle radera det man skrivit i namn- och tidsfältet. */
+function paintQuickParts(){
+  const host = document.getElementById('quickEstStatus');
+  if(!host) return;
+  const box = document.getElementById('qpartsBox');
+  const html = quickPartsBlock();
+  if(box){
+    if(html) box.outerHTML = html; else box.remove();
+  } else if(html){
+    host.insertAdjacentHTML('afterend', html);
+  }
+  wireQuickParts();
+}
+
+function syncQuickTotals(){
+  const t = quickPartsTotals(state.quickParts || []);
+  const setV = (id,v) => { const e = document.getElementById(id); if(e) e.value = v; };
+  setV('fKcal', Math.round(t.kcal));
+  setV('fProtein', Math.round(t.protein*10)/10);
+  setV('fFat', Math.round(t.fat*10)/10);
+  setV('fCarbs', Math.round(t.carbs*10)/10);
+}
+
+function wireQuickParts(){
+  document.querySelectorAll('.qpamt').forEach(inp => {
+    inp.oninput = () => {
+      const i = Number(inp.dataset.qi);
+      if(!state.quickParts || !state.quickParts[i]) return;
+      state.quickParts[i].amount = Number(inp.value) || 0;
+      const el = document.getElementById('qpKcal_' + i);
+      if(el) el.textContent = componentKcal(state.quickParts[i]);
+      const totEl = document.getElementById('qpTotal');
+      if(totEl) totEl.textContent = Math.round(quickPartsTotals(state.quickParts).kcal);
+      syncQuickTotals();
+    };
+    inp.onfocus = () => setTimeout(() => inp.select(), 0);
+  });
+  const clearQP = document.getElementById('clearQuickParts');
+  if(clearQP) clearQP.onclick = () => {
+    state.quickParts = null; state.quickNote = null;
+    paintQuickParts();
+  };
+}
+
+function quickPartsTotals(parts){
+  return (parts||[]).reduce((a,c) => {
+    const m = componentMacros(c);
+    a.kcal += m.kcal; a.protein += m.protein; a.fat += m.fat; a.carbs += m.carbs;
+    return a;
+  }, {kcal:0, protein:0, fat:0, carbs:0});
+}
+
+/* Särredovisning: en rad per del med egen kcal, justerbar mängd. */
+function quickPartsBlock(){
+  const parts = state.quickParts;
+  if(!parts || !parts.length) return '';
+  const tot = quickPartsTotals(parts);
+  return `<div class="qparts" id="qpartsBox">
+    <div class="qpartshead">
+      <span>Delar</span>
+      <button type="button" class="qpclear" id="clearQuickParts">Rensa</button>
+    </div>
+    ${parts.map((c,i) => `<div class="qprow">
+      <span class="qpsrc ${c.src}" title="${c.src==='lib'?'Från ditt bibliotek':'Uppskattat av AI'}">${c.src==='lib'?'✓':'~'}</span>
+      <span class="qpname">${c.name}</span>
+      <input class="qpamt" data-qi="${i}" type="number" step="${c.unit==='st'?'0.5':'10'}"
+        value="${Number(c.amount)||0}" inputmode="decimal">
+      <span class="qpunit">${c.unit==='st'?'st':'g'}</span>
+      <span class="qpkcal" id="qpKcal_${i}">${componentKcal(c)}</span>
+    </div>`).join('')}
+    <div class="qptot">Totalt <b id="qpTotal">${Math.round(tot.kcal)}</b> kcal</div>
+    ${state.quickNote ? `<div class="qpnote">${state.quickNote}</div>` : ''}
+  </div>`;
+}
+
 
 function buildMealForm(){
   const t = computeMealTotals();
