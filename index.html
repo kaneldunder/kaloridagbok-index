@@ -1560,10 +1560,11 @@ function entryEditRow(item, idx, type){
         <div class="mtrow">${MEAL_TYPES.slice(3).map(m=>`<button type="button" class="mtbtn ${(item.mealType||detectMealType(item.name))===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
       </div>` : ''}
       ${type === 'food' ? portionScaler(item) : ''}
+      ${type === 'food' ? `<button class="splitbtn" id="reEstimate">✨ Räkna om från texten</button>` : ''}
       ${type === 'food' && (state.editingComps || (item.components && item.components.length))
         ? componentEditor(item)
-        : type === 'food' ? `<button class="splitbtn" id="splitEntry">⁂ Dela upp i ingredienser</button>
-            <div class="est-status" id="splitStatus"></div>` : ''}
+        : type === 'food' ? `<button class="splitbtn" id="splitEntry">⁂ Dela upp i ingredienser</button>` : ''}
+      ${type === 'food' ? `<div class="est-status" id="splitStatus"></div>` : ''}
       <div class="fieldgrid">
         <div><label>Kcal</label><input id="eeKcal" type="number" value="${item.kcal||0}"
           style="border:1px solid var(--line); border-radius:8px; padding:8px; font-size:14px; font-family:inherit; width:100%;"></div>
@@ -2024,6 +2025,44 @@ Svara ENDAST med JSON, ingen markdown:
     }catch(e){
       if(st){ st.style.color = 'var(--rust)'; st.textContent = 'Kunde inte dela upp: ' + (e.message||'okänt fel'); }
       splitBtn.disabled = false; splitBtn.textContent = '⁂ Dela upp i ingredienser';
+    }
+  };
+
+  const reBtn = document.getElementById('reEstimate');
+  if(reBtn) reBtn.onclick = async () => {
+    const nameEl = document.getElementById('eeName');
+    const desc = nameEl ? nameEl.value.trim() : '';
+    const st = document.getElementById('splitStatus');
+    if(!desc){
+      if(st){ st.style.color = 'var(--rust)'; st.textContent = 'Skriv vad du åt först.'; }
+      return;
+    }
+    reBtn.disabled = true; reBtn.textContent = 'Räknar om…';
+    if(st){ st.style.color = 'var(--muted)'; st.textContent = ''; }
+    try{
+      const { parts, note } = await estimateMealParts(desc);
+      state.editingComps = parts.map(c => ({...c}));
+      const t = quickPartsTotals(state.editingComps);
+      state.splitNote = `${parts.length} ${parts.length===1?'del':'delar'} · ${Math.round(t.kcal)} kcal`
+        + (note ? ' · ' + note : '');
+      // Behåll det användaren skrivit och valt — omritningen läser annars
+      // tillbaka postens gamla värden
+      const keptMt = (document.querySelector('.entry.editrow .mtbtn.active')||{}).dataset;
+      await renderContent();
+      const setV = (id,v) => { const e = document.getElementById(id); if(e) e.value = v; };
+      setV('eeName', desc);
+      setV('eeKcal', Math.round(t.kcal));
+      setV('eeProtein', Math.round(t.protein*10)/10);
+      setV('eeFat', Math.round(t.fat*10)/10);
+      setV('eeCarbs', Math.round(t.carbs*10)/10);
+      if(keptMt && keptMt.mt){
+        document.querySelectorAll('.entry.editrow .mtbtn').forEach(b =>
+          b.classList.toggle('active', b.dataset.mt === keptMt.mt));
+      }
+    }catch(e){
+      const st2 = document.getElementById('splitStatus');
+      if(st2){ st2.style.color = 'var(--rust)'; st2.textContent = 'Kunde inte räkna om: ' + (e.message||'okänt fel'); }
+      reBtn.disabled = false; reBtn.textContent = '✨ Räkna om från texten';
     }
   };
 
@@ -2876,26 +2915,10 @@ async function estimateMealPhoto(file){
   }
 }
 
-async function estimateQuickMeal(){
-  const nameEl = document.getElementById('fName');
-  const statusEl = document.getElementById('quickEstStatus');
-  const btn = document.getElementById('quickEstBtn');
-  const desc = nameEl ? nameEl.value.trim() : '';
-  if(!desc){
-    if(statusEl){ statusEl.style.color = 'var(--rust)'; statusEl.textContent = 'Beskriv måltiden först, t.ex. "2 ägg och en banan".'; }
-    return;
-  }
-
-  const applyParts = (parts, note) => {
-    state.quickParts = parts;
-    state.quickNote = note || null;
-    const st = document.getElementById('quickEstStatus');
-    if(st) st.textContent = '';
-    paintQuickParts();
-    syncQuickTotals();
-  };
-
-  // Biblioteket först — kända delar kostar inget och har dina egna värden
+/* Delar upp en fritext i ingredienser: biblioteket först, resten till AI.
+   Returnerar { parts, note } eller kastar. Används av både snabbformuläret
+   och redigeringsläget. */
+async function estimateMealParts(desc){
   const partial = pantryPartialLookup(desc);
   const libParts = partial ? partial.known.map(i => ({
     name: i.entry.name, unit: i.unit, amount: i.amount,
@@ -2907,20 +2930,16 @@ async function estimateQuickMeal(){
   if(partial && !partial.unknown.length){
     partial.known.forEach(i => { i.entry.lastUsed = Date.now(); });
     ghSaveBundle();
-    applyParts(libParts, null);
-    return;
+    return { parts: libParts, note: null };
   }
 
   const aiDesc = (partial && partial.unknown.length) ? partial.unknown.join(' och ') : desc;
-  if(btn){ btn.disabled = true; btn.textContent = 'Uppskattar…'; }
-  if(statusEl) statusEl.textContent = '';
-  try{
-    const data = await callAnthropic({
-      model: "claude-sonnet-4-6",
-      max_tokens: 700,
-      messages: [{
-        role: "user",
-        content: `Du är en näringsdatabas. Dela upp denna måltid i sina delar och uppskatta varje del: "${aiDesc}"
+  const data = await callAnthropic({
+    model: "claude-sonnet-4-6",
+    max_tokens: 700,
+    messages: [{
+      role: "user",
+      content: `Du är en näringsdatabas. Dela upp denna måltid i sina delar och uppskatta varje del: "${aiDesc}"
 
 Regler:
 1. En rad per livsmedel. Enhet "g" för sådant som vägs, "st" för sådant som räknas (ägg, frukt, frallor, skivor).
@@ -2930,41 +2949,59 @@ Regler:
 
 Svara ENDAST med JSON, inga förklaringar, ingen markdown:
 {"delar":[{"name":string,"unit":"g"|"st","amount":number,"kcalPer100":number,"proteinPer100":number,"fatPer100":number,"carbsPer100":number}],"antaganden":"kort text"}`
-      }]
-    });
-    const textBlock = (data.content || []).find(b => b.type === 'text');
-    if(!textBlock) throw new Error('Tomt svar från modellen');
-    const parsed = JSON.parse(textBlock.text.replace(/```json|```/g, '').trim());
-    const aiParts = (parsed.delar || []).map(c => ({
-      name: String(c.name||'').trim(),
-      unit: c.unit === 'st' ? 'st' : 'g',
-      amount: Number(c.amount) || 0,
-      kcalPer100: Math.round(Number(c.kcalPer100)||0),
-      proteinPer100: Math.round((Number(c.proteinPer100)||0)*10)/10,
-      fatPer100: Math.round((Number(c.fatPer100)||0)*10)/10,
-      carbsPer100: Math.round((Number(c.carbsPer100)||0)*10)/10,
+    }]
+  });
+  const textBlock = (data.content || []).find(b => b.type === 'text');
+  if(!textBlock) throw new Error('Tomt svar från modellen');
+  const parsed = JSON.parse(textBlock.text.replace(/```json|```/g, '').trim());
+  const aiParts = (parsed.delar || []).map(c => ({
+    name: String(c.name||'').trim(),
+    unit: c.unit === 'st' ? 'st' : 'g',
+    amount: Number(c.amount) || 0,
+    kcalPer100: Math.round(Number(c.kcalPer100)||0),
+    proteinPer100: Math.round((Number(c.proteinPer100)||0)*10)/10,
+    fatPer100: Math.round((Number(c.fatPer100)||0)*10)/10,
+    carbsPer100: Math.round((Number(c.carbsPer100)||0)*10)/10,
+    src: 'ai'
+  })).filter(c => c.name && c.amount > 0);
+
+  if(!aiParts.length){
+    // Svarade modellen ändå med en klumpsumma, använd den som en enda del
+    const k = Number(parsed.kcal);
+    if(!isFinite(k) || k <= 0) throw new Error('Inga delar i svaret');
+    aiParts.push({
+      name: aiDesc.length > 40 ? aiDesc.slice(0,40) + '…' : aiDesc,
+      unit: 'g', amount: 100,
+      kcalPer100: Math.round(k),
+      proteinPer100: Math.round((Number(parsed.protein)||0)*10)/10,
+      fatPer100: Math.round((Number(parsed.fat)||0)*10)/10,
+      carbsPer100: Math.round((Number(parsed.carbs)||0)*10)/10,
       src: 'ai'
-    })).filter(c => c.name && c.amount > 0);
-    if(!aiParts.length){
-      // Svarade modellen ändå med en klumpsumma, använd den som en enda del
-      const k = Number(parsed.kcal);
-      if(!isFinite(k) || k <= 0) throw new Error('Inga delar i svaret');
-      aiParts.push({
-        name: aiDesc.length > 40 ? aiDesc.slice(0,40) + '…' : aiDesc,
-        unit: 'g', amount: 100,
-        kcalPer100: Math.round(k),
-        proteinPer100: Math.round((Number(parsed.protein)||0)*10)/10,
-        fatPer100: Math.round((Number(parsed.fat)||0)*10)/10,
-        carbsPer100: Math.round((Number(parsed.carbs)||0)*10)/10,
-        src: 'ai'
-      });
-    }
-    libParts.forEach(i => {
-      const e = findInPantry(i.name, i.unit);
-      if(e) e.lastUsed = Date.now();
     });
-    if(libParts.length) ghSaveBundle();
-    applyParts(libParts.concat(aiParts), parsed.antaganden || null);
+  }
+  if(libParts.length) ghSaveBundle();
+  return { parts: libParts.concat(aiParts), note: parsed.antaganden || null };
+}
+
+async function estimateQuickMeal(){
+  const nameEl = document.getElementById('fName');
+  const statusEl = document.getElementById('quickEstStatus');
+  const btn = document.getElementById('quickEstBtn');
+  const desc = nameEl ? nameEl.value.trim() : '';
+  if(!desc){
+    if(statusEl){ statusEl.style.color = 'var(--rust)'; statusEl.textContent = 'Beskriv måltiden först, t.ex. "2 ägg och en banan".'; }
+    return;
+  }
+  if(btn){ btn.disabled = true; btn.textContent = 'Uppskattar…'; }
+  if(statusEl) statusEl.textContent = '';
+  try{
+    const { parts, note } = await estimateMealParts(desc);
+    state.quickParts = parts;
+    state.quickNote = note;
+    const st = document.getElementById('quickEstStatus');
+    if(st) st.textContent = '';
+    paintQuickParts();
+    syncQuickTotals();
   } catch(e){
     console.error('Quick estimation failed', e);
     const st = document.getElementById('quickEstStatus');
@@ -2977,6 +3014,7 @@ Svara ENDAST med JSON, inga förklaringar, ingen markdown:
     if(b2){ b2.disabled = false; b2.textContent = '✨ Uppskatta text'; }
   }
 }
+
 
 /* Ritar in delarna utan att röra resten av formuläret — en omrendering
    skulle radera det man skrivit i namn- och tidsfältet. */
