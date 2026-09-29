@@ -1534,35 +1534,41 @@ function componentEditor(item){
   </div>`;
 }
 
-/* AI:n svarar ALLTID med näringsvärden per 100 gram — det är den siffra
-   modellen är pålitlig på. För styckvaror följer vikten per styck med, och
-   omräkningen till per styck sker här. Tidigare bad vi om "per styck" direkt,
-   och modellen fyllde då i per-100-gram-värden ändå (2 ägg blev 310 kcal). */
+/* AI:n svarar alltid med näringsvärden PER 100 GRAM och delens TOTALA VIKT
+   i gram — två siffror modellen är pålitlig på. Styckvara blir det bara när
+   en styckvikt följer med; saknas den faller vi tillbaka på gram i stället
+   för att tolka per-100-gram-värden som per styck (2 ägg blev annars 310
+   kcal, 3 skivor sidfläsk 960). */
 function partFromAi(c){
-  const unit = c.unit === 'st' ? 'st' : 'g';
-  const gps = Number(c.gramPerStyck);
-  const hasGps = unit === 'st' && isFinite(gps) && gps > 0;
-  const f = hasGps ? gps / 100 : 1;
-  // Acceptera både det nya fältnamnet och det gamla — struntar modellen i
-  // schemat ska siffran inte tyst bli noll
-  const v = (k, dec) => {
-    const raw = c[k + 'Per100g'];
-    const alt = c[k + 'Per100'];
-    const n = (Number(raw != null && raw !== '' ? raw : alt) || 0) * f;
-    return dec ? Math.round(n * 10) / 10 : Math.round(n);
+  const per100 = k => {
+    const a = c[k + 'Per100g'], b = c[k + 'Per100'];
+    return Number(a != null && a !== '' ? a : b) || 0;
   };
-  return {
-    name: String(c.name || c.namn || '').trim(),
-    unit,
-    amount: Number(c.amount) || 0,
-    kcalPer100:    v('kcal'),
-    proteinPer100: v('protein', true),
-    fatPer100:     v('fat', true),
-    carbsPer100:   v('carbs', true),
-    ...(hasGps ? { gramPerStyck: Math.round(gps) } : {}),
-    src: 'ai'
-  };
+  const kcal100 = per100('kcal'), prot100 = per100('protein'),
+        fat100  = per100('fat'),  carb100 = per100('carbs');
+  const name = String(c.name || c.namn || '').trim();
+  const num = v => { const n = Number(v); return isFinite(n) && n > 0 ? n : null; };
+
+  const antal  = num(c.styckAntal) || (c.unit === 'st' ? num(c.amount) : null);
+  const vikt   = num(c.styckvikt)  || num(c.gramPerStyck);
+  const gram   = num(c.gram) || (c.unit !== 'st' ? num(c.amount) : null);
+
+  const make = (unit, amount, f, extra) => ({
+    name, unit, amount,
+    kcalPer100:    Math.round(kcal100 * f),
+    proteinPer100: Math.round(prot100 * f * 10) / 10,
+    fatPer100:     Math.round(fat100  * f * 10) / 10,
+    carbsPer100:   Math.round(carb100 * f * 10) / 10,
+    ...extra, src: 'ai'
+  });
+
+  // Styck kräver en känd styckvikt — annars vet vi inte vad en styck är
+  if(antal && vikt) return make('st', antal, vikt / 100, { gramPerStyck: Math.round(vikt) });
+
+  // Gram: per-100-gram-värdena används precis som de är
+  return make('g', Math.round(gram || 100), 1, {});
 }
+
 
 function componentKcal(c){
   const amt = Number(c.amount) || 0;
@@ -2029,13 +2035,14 @@ Måltidens registrerade värden: ${it.kcal} kcal, protein ${it.protein||0} g, fe
 
 Regler:
 1. Läs ut mängd och livsmedel för varje del. Enhet "g" för sådant som vägs, "st" för sådant som räknas.
-2. Näringsvärdena ska ALLTID vara PER 100 GRAM av livsmedlet — aldrig per styck och aldrig multiplicerat med mängden.
-2b. Är enheten "st" ska du dessutom ange gramPerStyck: vad EN styck väger i gram (ett medelstort ägg ≈ 60, en fralla ≈ 45). Appen räknar själv om till per styck.
+2. Näringsvärdena ska ALLTID vara PER 100 GRAM — aldrig per styck, aldrig multiplicerat med mängden.
+3. gram = delens TOTALA vikt i gram. "3 skivor sidfläsk" med 20 g per skiva → gram: 60.
+4. Räknas livsmedlet i stycken, ange även styckAntal och styckvikt (ägg ≈ 60 g, brödskiva ≈ 30 g, fralla ≈ 45 g). Appen räknar själv.
 3. Delarnas summa ska hamna nära de registrerade värdena ovan. Justera rimliga mängder så att det stämmer.
 4. Anges ingen mängd för en del, uppskatta en rimlig portion.
 
 Svara ENDAST med JSON, ingen markdown:
-{"delar":[{"name":string,"unit":"g"|"st","amount":number,"gramPerStyck":number,"kcalPer100g":number,"proteinPer100g":number,"fatPer100g":number,"carbsPer100g":number}]}` }]
+{"delar":[{"name":string,"gram":number,"styckAntal":number|null,"styckvikt":number|null,"kcalPer100g":number,"proteinPer100g":number,"fatPer100g":number,"carbsPer100g":number}]}` }]
       });
       const tb = (res.content||[]).find(b => b.type === 'text');
       if(!tb) throw new Error('Tomt svar');
@@ -2969,13 +2976,14 @@ async function estimateMealParts(desc){
 
 Regler:
 1. En rad per livsmedel. Enhet "g" för sådant som vägs, "st" för sådant som räknas (ägg, frukt, frallor, skivor).
-2. Näringsvärdena ska ALLTID vara PER 100 GRAM av livsmedlet — aldrig per styck och aldrig multiplicerat med mängden.
-2b. Är enheten "st" ska du dessutom ange gramPerStyck: vad EN styck väger i gram (ett medelstort ägg ≈ 60, en fralla ≈ 45). Appen räknar själv om till per styck.
+2. Näringsvärdena ska ALLTID vara PER 100 GRAM — aldrig per styck, aldrig multiplicerat med mängden.
+3. gram = delens TOTALA vikt i gram. "3 skivor sidfläsk" med 20 g per skiva → gram: 60.
+4. Räknas livsmedlet i stycken, ange även styckAntal och styckvikt (ägg ≈ 60 g, brödskiva ≈ 30 g, fralla ≈ 45 g). Appen räknar själv.
 3. Anges ingen mängd, utgå från typisk svensk normalstorlek.
 4. Anta vanligast förekommande beredning.
 
 Svara ENDAST med JSON, inga förklaringar, ingen markdown:
-{"delar":[{"name":string,"unit":"g"|"st","amount":number,"gramPerStyck":number,"kcalPer100g":number,"proteinPer100g":number,"fatPer100g":number,"carbsPer100g":number}],"antaganden":"kort text"}`
+{"delar":[{"name":string,"gram":number,"styckAntal":number|null,"styckvikt":number|null,"kcalPer100g":number,"proteinPer100g":number,"fatPer100g":number,"carbsPer100g":number}],"antaganden":"kort text"}`
     }]
   });
   const textBlock = (data.content || []).find(b => b.type === 'text');
@@ -3273,13 +3281,13 @@ Regler:
 1. Dela upp i ANTAL och LIVSMEDEL. Exempel: "2 stekt ägg" → amount=2, namn="stekt ägg"
 2. Enhet "g" för sådant som vägs, "st" för sådant som räknas (ägg, frukt, bröd, korv).
 3. Vardagsmått (dl, msk, skivor) räknas om till gram → enhet "g".
-4. Näringsvärdena ska ALLTID vara PER 100 GRAM — aldrig per styck, aldrig multiplicerat med amount.
-5. Är enheten "st" ska du dessutom ange gramPerStyck: vad EN styck väger (medelstort ägg ≈ 60 g).
-   "2 ägg" → amount=2, gramPerStyck=60, kcalPer100g=155. Appen räknar själv ut resten.
+4. Näringsvärdena ska ALLTID vara PER 100 GRAM — aldrig per styck, aldrig multiplicerat med mängden.
+5. gram = total vikt i gram. Räknas livsmedlet i stycken, ange även styckAntal och styckvikt.
+   "2 ägg" → gram=120, styckAntal=2, styckvikt=60, kcalPer100g=155. Appen räknar själv.
 5. Anges ingen mängd: amount=1 (eller normal portion i gram).
 
 Svara ENDAST med JSON, ingen markdown:
-{"namn": string, "unit": "g"|"st", "amount": number, "gramPerStyck": number, "kcalPer100g": number, "proteinPer100g": number, "fatPer100g": number, "carbsPer100g": number, "antagande": string}`
+{"namn": string, "gram": number, "styckAntal": number|null, "styckvikt": number|null, "kcalPer100g": number, "proteinPer100g": number, "fatPer100g": number, "carbsPer100g": number, "antagande": string}`
       }]
     });
     const textBlock = (data.content || []).find(b => b.type === 'text');
@@ -3287,20 +3295,20 @@ Svara ENDAST med JSON, ingen markdown:
     const parsed = JSON.parse(textBlock.text.replace(/```json|```/g, '').trim());
 
     // Lokal tolkning vinner när den är exakt ("40 g"), annars modellens
+    // Omräknaren bestämmer enheten — den vet vad en styck väger
+    const conv = partFromAi({ ...parsed, name: parsed.namn });
     const local = parseAmountFromName(raw);
-    const useLocal = local && local.exact;
-    row.unit = useLocal ? local.unit : (parsed.unit === 'st' ? 'st' : 'g');
-    const amt = useLocal ? local.amount : Number(parsed.amount);
-    if(isFinite(amt) && amt > 0) row.amount = amt;
-    if(parsed.namn) row.name = String(parsed.namn).trim();
-
-    const conv = partFromAi({ ...parsed, name: parsed.namn, unit: row.unit });
+    row.unit = conv.unit;
+    // Din egen mängd vinner när den är i samma enhet som uppskattningen
+    row.amount = (local && local.exact && local.unit === conv.unit)
+      ? local.amount : conv.amount;
+    if(conv.name) row.name = conv.name;
     row.kcalPer100 = conv.kcalPer100;
     row.proteinPer100 = conv.proteinPer100;
     row.fatPer100 = conv.fatPer100;
     row.carbsPer100 = conv.carbsPer100;
     row.portion = null;
-    const extra = !useLocal && parsed.antagande ? ' · ' + parsed.antagande : '';
+    const extra = parsed.antagande ? ' · ' + parsed.antagande : '';
     row.note = `Tolkat som ${row.amount}${row.unit === 'st' ? ' st' : ' g'} ${row.name}${extra}`;
     // Enhet och etiketter kan ha ändrats — rita om raden
     renderContent();
@@ -3334,7 +3342,7 @@ async function scanLabel(idx, file){
         role: "user",
         content: [
           { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
-          { type: "text", text: `Läs näringsdeklarationen på bilden och räkna om till PER 100 GRAM om värdena anges per annan mängd. Anges även en portions- eller styckvikt, ange den som gramPerStyck. Svara ENDAST med ett JSON-objekt, ingen förklaring, ingen markdown, inga kodstaket. Format exakt: {"name": string, "gramPerStyck": number|null, "kcalPer100g": number, "proteinPer100g": number, "fatPer100g": number, "carbsPer100g": number}` }
+          { type: "text", text: `Läs näringsdeklarationen på bilden och räkna om till PER 100 GRAM om värdena anges per annan mängd. Anges även en portions- eller styckvikt, ange den som styckvikt. Svara ENDAST med ett JSON-objekt, ingen förklaring, ingen markdown, inga kodstaket. Format exakt: {"name": string, "styckvikt": number|null, "kcalPer100g": number, "proteinPer100g": number, "fatPer100g": number, "carbsPer100g": number}` }
         ]
       }]
     });
@@ -4365,16 +4373,17 @@ function renderSettings(content){
         const perPiece = R.unit === 'st';
         const data = await callAnthropic({ model:"claude-sonnet-4-6", max_tokens:300,
           messages:[{ role:"user", content: perPiece
-            ? `Ange näringsinnehåll PER 100 GRAM för: "${R.name}", samt gramPerStyck = vad EN normalstor enhet väger i gram. Svara ENDAST med JSON, ingen markdown: {"gramPerStyck":number,"kcalPer100g":number,"proteinPer100g":number,"fatPer100g":number,"carbsPer100g":number}`
+            ? `Ange näringsinnehåll PER 100 GRAM för: "${R.name}", samt styckvikt = vad EN normalstor enhet väger i gram. Svara ENDAST med JSON, ingen markdown: {"styckvikt":number,"kcalPer100g":number,"proteinPer100g":number,"fatPer100g":number,"carbsPer100g":number}`
             : `Uppskatta näringsinnehåll per 100 gram för: "${R.name}". Svara ENDAST med JSON, ingen markdown: {"kcalPer100g":number,"proteinPer100g":number,"fatPer100g":number,"carbsPer100g":number}` }]});
         const tb = (data.content||[]).find(b=>b.type==='text');
         const raw = JSON.parse(tb.text.replace(/```json|```/g,'').trim());
         fill(partFromAi({ ...raw, unit: R.unit }), false);
-        if(perPiece && raw.gramPerStyck){
+        const vikt = Number(raw.styckvikt || raw.gramPerStyck);
+        if(perPiece && vikt > 0){
           const gi = document.getElementById('peGperSt');
-          if(gi && !gi.value) gi.value = Math.round(Number(raw.gramPerStyck));
+          if(gi && !gi.value) gi.value = Math.round(vikt);
           st().style.color = 'var(--muted)';
-          st().textContent = `Räknat per styck à ${Math.round(Number(raw.gramPerStyck))} g.`;
+          st().textContent = `Räknat per styck à ${Math.round(vikt)} g.`;
         }
       }catch(e){ st().style.color='var(--rust)'; st().textContent='Fel: '+((e.message||'').slice(0,80)); }
       finally{ peEst.disabled = false; peEst.textContent = '✨ Uppskatta'; }
