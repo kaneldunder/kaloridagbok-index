@@ -749,21 +749,7 @@
     width:40px; height:40px; flex-shrink:0; border-radius:50%; border:none; background:var(--gold); color:var(--plate-ink);
     display:flex; align-items:center; justify-content:center; cursor:pointer;
   }
-  .qb-sugs{
-    max-width:520px; margin:0 auto 8px; display:flex; align-items:center; gap:6px;
-    overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch;
-  }
-  .qb-sugs::-webkit-scrollbar{display:none;}
-  .qb-sugicon{color:var(--muted); display:flex; flex-shrink:0;}
-  .qb-sug{
-    flex-shrink:0; height:34px; padding:0 12px; border-radius:999px; border:1px solid #4E7464;
-    background:rgba(37,69,58,.95); color:var(--ink); font-family:inherit; font-size:13px; white-space:nowrap; cursor:pointer;
-  }
-  .qb-sug b{font-weight:600; color:var(--gold-ink); margin-left:3px;}
-  .qb-sug:disabled{opacity:.5;}
-  body.hasqbar.hassugs{padding-bottom:140px;}
   @media(min-width:820px){ .qbar-in{max-width:700px;} }
-  @media(min-width:820px){ .qb-sugs{max-width:700px;} }
 </style>
 </head>
 <body>
@@ -2032,55 +2018,8 @@ function escapeHtml(v){
   return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-/* ---- Förslag efter tid på dygnet ----
-   Det du återkommande äter runt den här tiden: samma sak på minst 3 olika dagar
-   de senaste 6 veckorna, inom ±90 min från nu. Poängen styrs främst av hur ofta,
-   lite av hur nära i tid och hur nyligen. Alkohol föreslås aldrig, och det som
-   redan loggats idag hoppas över. */
-function timeSuggestions(max){
-  if(ymd(state.currentDate) !== todayYmd()) return [];
-  const now = new Date();
-  const nowMin = now.getHours()*60 + now.getMinutes();
-  const toMin = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t||''); return m ? Number(m[1])*60 + Number(m[2]) : null; };
-  const norm = n => String(n||'').trim().toLowerCase().replace(/\s+/g,' ');
-  const isAlcohol = f => f.mealType === 'alkohol' || detectMealType(f.name) === 'alkohol';
-  const today = state.cache[todayYmd()];
-  const loggedToday = new Set((today ? today.food : []).map(f => norm(f.name)));
-  const cand = {};
-  for(let age = 1; age <= 42; age++){
-    const d = new Date(now); d.setDate(d.getDate() - age);
-    const day = state.cache[ymd(d)];
-    if(!day || !day.food) continue;
-    const seenToday = new Set();
-    day.food.forEach(f => {
-      const k = norm(f.name), m = toMin(f.time);
-      if(!k || m === null || !(Number(f.kcal) > 0) || loggedToday.has(k) || seenToday.has(k) || isAlcohol(f)) return;
-      const diff = Math.abs(m - nowMin);
-      if(diff > 90) return;
-      seenToday.add(k);
-      const c = cand[k] || (cand[k] = { days:0, closeness:0, recency:0, item:f, age });
-      c.days++;
-      c.closeness += 1 - diff/120;
-      c.recency += 1 - age/60;
-      if(age < c.age){ c.item = f; c.age = age; }
-    });
-  }
-  return Object.values(cand)
-    .filter(c => c.days >= 3)
-    .map(c => ({ ...c, score: c.days + 0.5 * c.closeness / c.days + 0.5 * c.recency / c.days }))
-    .sort((a,b) => b.score - a.score)
-    .slice(0, max || 4)
-    .map(c => c.item);
-}
-
 function quickBarHTML(){
-  const sug = timeSuggestions(4);
-  state.timeSugs = sug;
-  const chips = sug.length ? `<div class="qb-sugs" aria-label="Brukar du äta nu">
-      <span class="qb-sugicon" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
-      ${sug.map((f,i) => `<button type="button" class="qb-sug" data-sug="${i}">${escapeHtml(f.name.length > 26 ? f.name.slice(0,25) + '…' : f.name)} <b>${f.kcal}</b></button>`).join('')}
-    </div>` : '';
-  return `<div class="qbar">${chips}<div class="qbar-in">
+  return `<div class="qbar"><div class="qbar-in">
     <button type="button" class="qb-round" id="qbCam" aria-label="Fota måltid" title="Fota måltid">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
     </button>
@@ -2153,7 +2092,6 @@ async function renderDay(content){
     ${!state.openForm && state.selectedEntries.size === 0 ? quickBarHTML() : ''}
   `;
   document.body.classList.toggle('hasqbar', !state.openForm && state.selectedEntries.size === 0);
-  document.body.classList.toggle('hassugs', !!document.querySelector('.qb-sugs'));
   const wkLbl = document.getElementById('toWeek');
   if(wkLbl) wkLbl.innerHTML = weekLabelHTML(state.currentDate);
 
@@ -2198,19 +2136,6 @@ async function renderDay(content){
       estimateMealPhoto(f);
     };
   }
-  content.querySelectorAll('.qb-sug').forEach(btn => {
-    btn.onclick = async () => {
-      const src = (state.timeSugs || [])[Number(btn.dataset.sug)];
-      if(!src) return;
-      const copy = JSON.parse(JSON.stringify(src));
-      copy.time = timeForEntry(copy.name, copy.mealType);
-      data.food.push(copy);
-      sortByTime(data.food);
-      btn.disabled = true;
-      await saveDay(dateStr, data);
-      renderContent();
-    };
-  });
   const qbFav = document.getElementById('qbFav');
   if(qbFav) qbFav.onclick = () => {
     state.openForm = 'favorites'; state.confirmDelFav = null; state.mealType = null; renderContent();
