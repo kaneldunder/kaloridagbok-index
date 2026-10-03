@@ -4212,36 +4212,66 @@ function trendRatePerWeek(dateStr){
 }
 
 /* ---- Uppmätt förbrukning ----
-   Energibalans baklänges: om du ätit i snitt X netto och vikten (linjär trend) ändrats
-   Y kg/dag, är förbrukningen X − Y·7700. Räknas på de senaste 28 dagarna t.o.m. igår.
-   Jämförbar med formelns värde: båda gäller utöver de aktiva kalorier du loggar. */
+   Energibalans baklänges: om du ätit i snitt X netto och vikten ändrats Y kg/dag
+   är förbrukningen X − Y·7700. Jämförbar med formelns värde: båda gäller utöver de
+   aktiva kalorier du loggar.
+   Försiktighetsåtgärder mot vätskesvängningar (salt, alkohol, glykogen):
+   - 6 veckor när det finns underlag, annars 4
+   - de första 14 dagarna efter loggstart räknas inte (tidig vätskeförlust)
+   - Theil–Sen-lutning (median av alla parvisa lutningar) så att enstaka avvikande
+     vägningar inte drar iväg linjen
+   - osäkerhetsintervall från spridningen runt linjen */
 function measuredExpenditure(){
-  const days = 28;
-  const end = new Date(); end.setHours(12,0,0,0); end.setDate(end.getDate() - 1);
-  const start = new Date(end); start.setDate(end.getDate() - (days - 1));
-  const logged = [];
-  for(let i = 0; i < days; i++){
-    const d = new Date(start); d.setDate(start.getDate() + i);
-    const day = state.cache[ymd(d)];
-    if(day && day.food && day.food.length){
-      const t = dayTotals(day);
-      if(t.intake > 0) logged.push(t.net);
-    }
+  const yest = new Date(); yest.setHours(12,0,0,0); yest.setDate(yest.getDate() - 1);
+  const loggedKeys = Object.keys(state.cache).filter(k => {
+    const d = state.cache[k]; return d && d.food && d.food.length && dayTotals(d).intake > 0;
+  }).sort();
+  const firstLog = loggedKeys[0];
+  const earliest = firstLog ? new Date(firstLog + 'T12:00:00') : null;
+  if(earliest) earliest.setDate(earliest.getDate() + 14);
+
+  const build = (days) => {
+    const start = new Date(yest); start.setDate(yest.getDate() - (days - 1));
+    if(earliest && start < earliest) start.setTime(earliest.getTime());
+    const sKey = ymd(start), eKey = ymd(yest);
+    const span = Math.round((yest - start) / 86400000) + 1;
+    const nets = loggedKeys.filter(k => k >= sKey && k <= eKey).map(k => dayTotals(state.cache[k]).net);
+    const ws = state.weights.filter(w => w.date >= sKey && w.date <= todayYmd() && Number(w.kg) > 0)
+      .sort((x,y) => x.date.localeCompare(y.date));
+    const t0 = new Date(sKey + 'T12:00:00');
+    const pts = ws.map(w => ({ x: (new Date(w.date + 'T12:00:00') - t0) / 86400000, y: Number(w.kg) }));
+    const wSpan = pts.length ? pts[pts.length-1].x - pts[0].x : 0;
+    return { span, nets, pts, wSpan };
+  };
+  let w = build(42), days = 42;
+  if(w.nets.length < 28 || w.wSpan < 28){ w = build(28); days = 28; }
+  const res = { days: w.span, loggedDays: w.nets.length, weighIns: w.pts.length };
+  if(w.nets.length < 14){ res.reason = `Behöver minst 14 loggade dagar (efter de två första veckorna) — du har ${w.nets.length}.`; return res; }
+  if(w.pts.length < 5 || w.wSpan < 14){ res.reason = `Behöver minst 5 vägningar som spänner över 2 veckor — du har ${w.pts.length}.`; return res; }
+
+  // Theil–Sen
+  const slopes = [];
+  for(let i = 0; i < w.pts.length; i++) for(let j = i+1; j < w.pts.length; j++){
+    const dx = w.pts[j].x - w.pts[i].x;
+    if(dx >= 3) slopes.push((w.pts[j].y - w.pts[i].y) / dx);
   }
-  const sKey = ymd(start), eKey = todayYmd();
-  const ws = state.weights.filter(w => w.date >= sKey && w.date <= eKey && Number(w.kg) > 0)
-    .sort((a,b) => a.date.localeCompare(b.date));
-  const res = { days, loggedDays: logged.length, weighIns: ws.length };
-  if(logged.length < 14){ res.reason = `Behöver minst 14 loggade dagar av de senaste ${days} — du har ${logged.length}.`; return res; }
-  const t0 = new Date(sKey + 'T12:00:00');
-  const pts = ws.map(w => ({ x: (new Date(w.date + 'T12:00:00') - t0) / 86400000, y: Number(w.kg) }));
-  const span = pts.length ? pts[pts.length-1].x - pts[0].x : 0;
-  if(pts.length < 4 || span < 14){ res.reason = `Behöver minst 4 vägningar som spänner över 2 veckor — du har ${pts.length}.`; return res; }
-  const mx = pts.reduce((s,p)=>s+p.x,0)/pts.length, my = pts.reduce((s,p)=>s+p.y,0)/pts.length;
-  const slope = pts.reduce((s,p)=>s+(p.x-mx)*(p.y-my),0) / pts.reduce((s,p)=>s+(p.x-mx)**2,0);
-  const avgNet = Math.round(logged.reduce((s,v)=>s+v,0) / logged.length);
-  const E = Math.round((avgNet - slope * 7700) / 10) * 10;
-  Object.assign(res, { avgNet, kgPerWeek: slope * 7, tdee: E, coverage: logged.length / days });
+  if(!slopes.length){ res.reason = 'Vägningarna ligger för tätt för att visa en trend.'; return res; }
+  slopes.sort((a,b) => a - b);
+  const mid = slopes.length >> 1;
+  const slope = slopes.length % 2 ? slopes[mid] : (slopes[mid-1] + slopes[mid]) / 2;
+  const icpts = w.pts.map(p => p.y - slope * p.x).sort((a,b) => a - b);
+  const icpt = icpts[icpts.length >> 1];
+  // Osäkerhet: residualspridning → standardfel för lutningen
+  const mx = w.pts.reduce((s,p) => s + p.x, 0) / w.pts.length;
+  const sxx = w.pts.reduce((s,p) => s + (p.x - mx) ** 2, 0);
+  const ssr = w.pts.reduce((s,p) => s + (p.y - (icpt + slope * p.x)) ** 2, 0);
+  const seSlope = Math.sqrt(ssr / Math.max(1, w.pts.length - 2) / sxx);
+  const avgNet = Math.round(w.nets.reduce((s,v) => s + v, 0) / w.nets.length);
+  const r10 = v => Math.round(v / 10) * 10;
+  const E = r10(avgNet - slope * 7700);
+  const margin = Math.max(100, r10(1.96 * seSlope * 7700));
+  Object.assign(res, { avgNet, kgPerWeek: slope * 7, tdee: E, low: E - margin, high: E + margin,
+    margin, coverage: w.nets.length / w.span, uncertain: margin > 250 });
   if(E < 1000 || E > 4500){ res.reason = `Uträkningen gav ${E} kcal, vilket verkar orimligt — troligen saknas måltider i loggen.`; res.tdee = null; }
   return res;
 }
@@ -4730,23 +4760,28 @@ function measuredBlockHTML(r){
     const newTarget = m.tdee - r.deficit;
     const current = s.useMeasured && Number(s.measuredTdee) === m.tdee;
     const floor = r.baselineMode ? 1200 : 1500;
-    const bigGap = Math.abs(diff) / r.formulaTdee > 0.15;
+    const bigGap = Math.abs(diff) / r.formulaTdee > 0.15 && !(r.formulaTdee >= m.low && r.formulaTdee <= m.high);
     const tooLow = newTarget < floor;
     body = `
       <div class="calcline"><span>Snitt netto, ${m.loggedDays} loggade dagar</span><b>${m.avgNet} kcal</b></div>
       <div class="calcline"><span>Vikttrend</span><b>${fmtKg(m.kgPerWeek)} kg/v</b></div>
       <div class="calcline total"><span>Uppmätt förbrukning</span><b>${m.tdee} kcal</b></div>
+      <div class="calcline" style="font-size:12.5px;"><span>Troligt intervall</span><b style="font-size:13px; color:${m.uncertain ? 'var(--gold-ink)' : 'var(--ink)'}">${m.low}–${m.high} kcal</b></div>
       <div class="cmp-note">
-        Formeln säger ${r.formulaTdee} kcal — du förbrukar alltså ${Math.abs(diff) < 30 ? 'ungefär som formeln' : `${Math.abs(diff)} kcal ${diff > 0 ? 'mer' : 'mindre'} per dag än den tror`}.
-        Senaste ${m.days} dagarna, ${m.weighIns} vägningar.${m.coverage < 0.85 ? ' Några dagar saknas i loggen; saknade måltider gör att förbrukningen underskattas.' : ''}
+        Formeln säger ${r.formulaTdee} kcal${(r.formulaTdee >= m.low && r.formulaTdee <= m.high)
+          ? ' — det ligger inom intervallet, så formeln stämmer hittills bra för dig.'
+          : ` — du förbrukar alltså troligen ${diff > 0 ? 'mer' : 'mindre'} än den tror.`}
+        Senaste ${m.days} dagarna, ${m.loggedDays} loggade, ${m.weighIns} vägningar.${m.coverage < 0.85 ? ' Några dagar saknas i loggen; saknade måltider gör att förbrukningen underskattas.' : ''}
+        Salt, alkohol och vätskesvängningar kan flytta siffran flera hundra kcal.
       </div>
       ${bigGap ? `<div class="cmp-note" style="color:var(--gold-ink); background:var(--gold-light); border:1px solid var(--gold); border-radius:9px; padding:8px 10px; margin-top:8px;">
         Stor skillnad mot formeln. ${diff < 0
           ? 'De vanligaste orsakerna är att inte allt kommer med i loggen (dryck, småbitar, matfett) eller att klockan överskattar de aktiva kalorierna.'
           : 'Kan bero på att klockan underskattar rörelsen eller att portionerna loggas för stora.'}
-        ${m.weighIns < 10 ? ' Med bara ' + m.weighIns + ' vägningar är vikttrenden också osäker — väg dig gärna oftare.' : ''}
-      </div>` : (m.weighIns < 10 ? `<div class="cmp-note">Fler vägningar ger en säkrare siffra (nu ${m.weighIns}).</div>` : '')}
-      ${tooLow
+        ${m.weighIns < 12 ? ' Med ' + m.weighIns + ' vägningar är vikttrenden också osäker — väg dig gärna varje morgon ett tag.' : ''}
+      </div>` : (m.uncertain || m.weighIns < 12 ? `<div class="cmp-note">Fler vägningar ger ett smalare intervall (nu ${m.weighIns}).</div>` : '')}
+      ${(r.formulaTdee >= m.low && r.formulaTdee <= m.high && !s.useMeasured) ? ''
+        : tooLow
         ? `<div class="cmp-note" style="color:var(--rust); margin-top:8px;">Ett mål på ${newTarget} kcal vore för lågt (under ${floor}), så appen föreslår det inte. Se hellre över loggningen ett par veckor och räkna om.</div>`
         : current
         ? `<button class="addbtn" disabled style="border-style:solid; margin:10px 0 0; color:var(--sage); background:var(--sage-light); border-color:var(--sage-light);">✓ Används för ditt mål (${s.dailyGoal} kcal)</button>`
@@ -4851,6 +4886,30 @@ function renderSettings(content){
       }).join('') : '<div class="empty">Inga sparade livsmedel än.</div>'}
     </div>
 
+    <div class="sectitle">Aktiva kalorier från Hälsa</div>
+    <div class="card">
+      <div class="cmp-note" style="margin-top:0;">
+        En genväg i iPhones Genvägar-app läser dagens aktiva energi och öppnar appen med siffran i länken.
+        Appen sparar den automatiskt. Länken ska se ut så här, med siffran sist:
+      </div>
+      <div style="display:flex; gap:6px; margin:10px 0;">
+        <input id="hkLink" readonly value="${location.origin + location.pathname}?aktiva="
+          style="flex:1; min-width:0; border:1px solid var(--line); border-radius:9px; padding:9px 10px; font-size:12.5px; background:var(--field); color:var(--ink); font-family:inherit;">
+        <button class="secbtn" id="hkCopy">Kopiera</button>
+      </div>
+      <ol class="cmp-note" style="padding-left:18px; margin:0; line-height:1.6;">
+        <li>Genvägar → <b>+</b> (ny genväg).</li>
+        <li>Lägg till åtgärd, sök <b>hälsa</b> → <b>Hitta hälsoexempel</b>. Tryck på "Typ" och välj <b>Aktiv energi</b>. Lägg till filtret <b>Startdatum är idag</b>.</li>
+        <li>Sök <b>statistik</b> → <b>Beräkna statistik</b>, välj <b>Summa</b>.</li>
+        <li>Sök <b>avrunda</b> → <b>Avrunda tal</b>.</li>
+        <li>Sök <b>URL</b> → <b>URL</b>. Klistra in länken ovan och lägg till variabeln <i>Avrundat tal</i> direkt efter <b>=</b>.</li>
+        <li>Sök <b>öppna</b> → <b>Öppna URL:er</b>.</li>
+        <li>Döp genvägen till t.ex. "Aktiva kalorier" och kör den. Appen öppnas och visar "hämtat från Hälsa".</li>
+        <li>Vill du att den går av sig själv: fliken <b>Automatisering</b> → <b>Tid på dagen</b> (t.ex. 21:30, dagligen) → <b>Kör omedelbart</b> → välj genvägen.</li>
+      </ol>
+      <div class="cmp-note">Länken öppnas i telefonens standardwebbläsare — GitHub-inställningarna måste vara sparade där.</div>
+    </div>
+
     <div class="sectitle">Synk (GitHub)</div>
     <div class="card">
       <div class="empty" style="text-align:left; padding:0 0 10px;">
@@ -4889,6 +4948,14 @@ function renderSettings(content){
       <div class="est-status" id="syncIOStatus" style="margin-top:8px;"></div>
     </div>
   `;
+  const hkCopy = document.getElementById('hkCopy');
+  if(hkCopy) hkCopy.onclick = async () => {
+    const el = document.getElementById('hkLink');
+    try{ await navigator.clipboard.writeText(el.value); }
+    catch(e){ el.select(); try{ document.execCommand('copy'); }catch(_){} }
+    hkCopy.textContent = '✓ Kopierad';
+    setTimeout(() => { hkCopy.textContent = 'Kopiera'; }, 1800);
+  };
   document.getElementById('sSave').onclick = async () => {
     const newGoal = Number(document.getElementById('sGoal').value) || state.settings.dailyGoal;
     if(newGoal !== state.settings.dailyGoal) state.settings.goalSetAtWeight = currentWeightKg();
