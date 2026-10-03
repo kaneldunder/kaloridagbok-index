@@ -4689,7 +4689,7 @@ function calcResultHTML(){
       <div class="cmp-note">
         ${r.measured
           ? `Baserat på din egen logg och vikttrend.`
-          : `Baserat på ${r.weight} kg, ${state.settings.height} cm, ${state.settings.age} år (Mifflin-St Jeor).`}
+          : `Baserat på ${kgFmt(Math.round(r.weight*10)/10)} kg, ${state.settings.height} cm, ${state.settings.age} år (Mifflin-St Jeor).`}
         Motsvarar ca ${r.kgPerWeek.toFixed(2).replace('.',',')} kg/vecka.
       </div>
       ${r.baselineMode
@@ -4729,6 +4729,9 @@ function measuredBlockHTML(r){
     const diff = m.tdee - r.formulaTdee;
     const newTarget = m.tdee - r.deficit;
     const current = s.useMeasured && Number(s.measuredTdee) === m.tdee;
+    const floor = r.baselineMode ? 1200 : 1500;
+    const bigGap = Math.abs(diff) / r.formulaTdee > 0.15;
+    const tooLow = newTarget < floor;
     body = `
       <div class="calcline"><span>Snitt netto, ${m.loggedDays} loggade dagar</span><b>${m.avgNet} kcal</b></div>
       <div class="calcline"><span>Vikttrend</span><b>${fmtKg(m.kgPerWeek)} kg/v</b></div>
@@ -4737,7 +4740,15 @@ function measuredBlockHTML(r){
         Formeln säger ${r.formulaTdee} kcal — du förbrukar alltså ${Math.abs(diff) < 30 ? 'ungefär som formeln' : `${Math.abs(diff)} kcal ${diff > 0 ? 'mer' : 'mindre'} per dag än den tror`}.
         Senaste ${m.days} dagarna, ${m.weighIns} vägningar.${m.coverage < 0.85 ? ' Några dagar saknas i loggen; saknade måltider gör att förbrukningen underskattas.' : ''}
       </div>
-      ${current
+      ${bigGap ? `<div class="cmp-note" style="color:var(--gold-ink); background:var(--gold-light); border:1px solid var(--gold); border-radius:9px; padding:8px 10px; margin-top:8px;">
+        Stor skillnad mot formeln. ${diff < 0
+          ? 'De vanligaste orsakerna är att inte allt kommer med i loggen (dryck, småbitar, matfett) eller att klockan överskattar de aktiva kalorierna.'
+          : 'Kan bero på att klockan underskattar rörelsen eller att portionerna loggas för stora.'}
+        ${m.weighIns < 10 ? ' Med bara ' + m.weighIns + ' vägningar är vikttrenden också osäker — väg dig gärna oftare.' : ''}
+      </div>` : (m.weighIns < 10 ? `<div class="cmp-note">Fler vägningar ger en säkrare siffra (nu ${m.weighIns}).</div>` : '')}
+      ${tooLow
+        ? `<div class="cmp-note" style="color:var(--rust); margin-top:8px;">Ett mål på ${newTarget} kcal vore för lågt (under ${floor}), så appen föreslår det inte. Se hellre över loggningen ett par veckor och räkna om.</div>`
+        : current
         ? `<button class="addbtn" disabled style="border-style:solid; margin:10px 0 0; color:var(--sage); background:var(--sage-light); border-color:var(--sage-light);">✓ Används för ditt mål (${s.dailyGoal} kcal)</button>`
         : `<button class="addbtn" id="useMeasured" style="border-style:solid; margin:10px 0 0; color:var(--on-accent); background:var(--sage); border-color:var(--sage);">
             ${s.useMeasured ? 'Uppdatera' : 'Använd uppmätt förbrukning'} → mål ${newTarget} kcal</button>`}`;
@@ -4901,7 +4912,8 @@ function renderSettings(content){
     const useM = document.getElementById('useMeasured');
     if(useM) useM.onclick = async () => {
       const m = measuredExpenditure();
-      if(!m.tdee) return;
+      const r0 = goalSuggestion();
+      if(!m.tdee || !r0 || (m.tdee - r0.deficit) < (r0.baselineMode ? 1200 : 1500)) return;
       state.settings.useMeasured = true;
       state.settings.measuredTdee = m.tdee;
       const r = goalSuggestion();
