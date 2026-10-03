@@ -2033,14 +2033,17 @@ function escapeHtml(v){
 }
 
 /* ---- Förslag efter tid på dygnet ----
-   Det du brukar äta runt den här tiden de senaste 6 veckorna,
-   viktat efter hur nära i tid och hur nyligen. Redan loggat idag hoppas över. */
+   Det du återkommande äter runt den här tiden: samma sak på minst 3 olika dagar
+   de senaste 6 veckorna, inom ±90 min från nu. Poängen styrs främst av hur ofta,
+   lite av hur nära i tid och hur nyligen. Alkohol föreslås aldrig, och det som
+   redan loggats idag hoppas över. */
 function timeSuggestions(max){
   if(ymd(state.currentDate) !== todayYmd()) return [];
   const now = new Date();
   const nowMin = now.getHours()*60 + now.getMinutes();
   const toMin = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t||''); return m ? Number(m[1])*60 + Number(m[2]) : null; };
   const norm = n => String(n||'').trim().toLowerCase().replace(/\s+/g,' ');
+  const isAlcohol = f => f.mealType === 'alkohol' || detectMealType(f.name) === 'alkohol';
   const today = state.cache[todayYmd()];
   const loggedToday = new Set((today ? today.food : []).map(f => norm(f.name)));
   const cand = {};
@@ -2048,19 +2051,23 @@ function timeSuggestions(max){
     const d = new Date(now); d.setDate(d.getDate() - age);
     const day = state.cache[ymd(d)];
     if(!day || !day.food) continue;
+    const seenToday = new Set();
     day.food.forEach(f => {
       const k = norm(f.name), m = toMin(f.time);
-      if(!k || m === null || !(Number(f.kcal) > 0) || loggedToday.has(k)) return;
+      if(!k || m === null || !(Number(f.kcal) > 0) || loggedToday.has(k) || seenToday.has(k) || isAlcohol(f)) return;
       const diff = Math.abs(m - nowMin);
-      if(diff > 100) return;
-      const w = (1 - diff/130) * (1 - age/50);
-      const c = cand[k] || (cand[k] = { score:0, n:0, item:f, age });
-      c.score += w; c.n++;
+      if(diff > 90) return;
+      seenToday.add(k);
+      const c = cand[k] || (cand[k] = { days:0, closeness:0, recency:0, item:f, age });
+      c.days++;
+      c.closeness += 1 - diff/120;
+      c.recency += 1 - age/60;
       if(age < c.age){ c.item = f; c.age = age; }
     });
   }
   return Object.values(cand)
-    .filter(c => c.n >= 2 || c.score > 0.8)
+    .filter(c => c.days >= 3)
+    .map(c => ({ ...c, score: c.days + 0.5 * c.closeness / c.days + 0.5 * c.recency / c.days }))
     .sort((a,b) => b.score - a.score)
     .slice(0, max || 4)
     .map(c => c.item);
