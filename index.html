@@ -2017,7 +2017,7 @@ function dayHeroHTML(data, t){
     <div class="dh-row">
       ${baseline ? `<label class="dh-active ${activeVal !== '' ? 'filled' : ''}">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>
-        <span class="lbl"><b>Aktiva kalorier</b><small>${activeEntry && activeEntry.source === 'halsa' ? 'hämtat från Hälsa' : 'gör tallriken större'}</small></span>
+        <span class="lbl"><b>Aktiva kalorier</b><small>gör tallriken större</small></span>
         <input type="text" inputmode="numeric" id="activeInput" value="${activeVal}" placeholder="0" aria-label="Aktiva kalorier">
       </label>` : ''}
       ${mt ? `<div class="dh-prot ${baseline ? '' : 'wide'}">
@@ -4886,30 +4886,6 @@ function renderSettings(content){
       }).join('') : '<div class="empty">Inga sparade livsmedel än.</div>'}
     </div>
 
-    <div class="sectitle">Aktiva kalorier från Hälsa</div>
-    <div class="card">
-      <div class="cmp-note" style="margin-top:0;">
-        En genväg i iPhones Genvägar-app läser dagens aktiva energi och öppnar appen med siffran i länken.
-        Appen sparar den automatiskt. Länken ska se ut så här, med siffran sist:
-      </div>
-      <div style="display:flex; gap:6px; margin:10px 0;">
-        <input id="hkLink" readonly value="${location.origin + location.pathname}?aktiva="
-          style="flex:1; min-width:0; border:1px solid var(--line); border-radius:9px; padding:9px 10px; font-size:12.5px; background:var(--field); color:var(--ink); font-family:inherit;">
-        <button class="secbtn" id="hkCopy">Kopiera</button>
-      </div>
-      <ol class="cmp-note" style="padding-left:18px; margin:0; line-height:1.6;">
-        <li>Genvägar → <b>+</b> (ny genväg).</li>
-        <li>Lägg till åtgärd, sök <b>hälsa</b> → <b>Hitta hälsoexempel</b>. Tryck på "Typ" och välj <b>Aktiv energi</b>. Lägg till filtret <b>Startdatum är idag</b>.</li>
-        <li>Sök <b>statistik</b> → <b>Beräkna statistik</b>, välj <b>Summa</b>.</li>
-        <li>Sök <b>avrunda</b> → <b>Avrunda tal</b>.</li>
-        <li>Sök <b>URL</b> → <b>URL</b>. Klistra in länken ovan och lägg till variabeln <i>Avrundat tal</i> direkt efter <b>=</b>.</li>
-        <li>Sök <b>öppna</b> → <b>Öppna URL:er</b>.</li>
-        <li>Döp genvägen till t.ex. "Aktiva kalorier" och kör den. Appen öppnas och visar "hämtat från Hälsa".</li>
-        <li>Vill du att den går av sig själv: fliken <b>Automatisering</b> → <b>Tid på dagen</b> (t.ex. 21:30, dagligen) → <b>Kör omedelbart</b> → välj genvägen.</li>
-      </ol>
-      <div class="cmp-note">Länken öppnas i telefonens standardwebbläsare — GitHub-inställningarna måste vara sparade där.</div>
-    </div>
-
     <div class="sectitle">Synk (GitHub)</div>
     <div class="card">
       <div class="empty" style="text-align:left; padding:0 0 10px;">
@@ -4948,14 +4924,6 @@ function renderSettings(content){
       <div class="est-status" id="syncIOStatus" style="margin-top:8px;"></div>
     </div>
   `;
-  const hkCopy = document.getElementById('hkCopy');
-  if(hkCopy) hkCopy.onclick = async () => {
-    const el = document.getElementById('hkLink');
-    try{ await navigator.clipboard.writeText(el.value); }
-    catch(e){ el.select(); try{ document.execCommand('copy'); }catch(_){} }
-    hkCopy.textContent = '✓ Kopierad';
-    setTimeout(() => { hkCopy.textContent = 'Kopiera'; }, 1800);
-  };
   document.getElementById('sSave').onclick = async () => {
     const newGoal = Number(document.getElementById('sGoal').value) || state.settings.dailyGoal;
     if(newGoal !== state.settings.dailyGoal) state.settings.goalSetAtWeight = currentWeightKg();
@@ -5267,41 +5235,6 @@ function renderSettings(content){
 }
 
 /* ---------- INIT ---------- */
-/* ---- Aktiva kalorier via länk (t.ex. från en iOS-genväg som läser Hälsa) ----
-   ?aktiva=620  eller  ?aktiva=620&datum=2026-10-03
-   Värdet ersätter dagens aktiva kalorier. Parametrarna tas bort ur adressen efteråt. */
-async function handleUrlParams(){
-  let q;
-  try{ q = new URLSearchParams(location.search); }catch(e){ return; }
-  const raw = q.get('aktiva') !== null ? q.get('aktiva') : q.get('active');
-  if(raw === null) return;
-  let dateStr = q.get('datum') || todayYmd();
-  ['aktiva','active','datum'].forEach(k => q.delete(k));
-  try{
-    const rest = q.toString();
-    history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash);
-  }catch(e){}
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) dateStr = todayYmd();
-  const cleaned = String(raw).replace(/\s/g,'').replace(',', '.').replace(/[^0-9.]/g, '');
-  const kcal = /\d/.test(cleaned) ? Math.round(Number(cleaned)) : NaN;
-  if(!isFinite(kcal) || kcal < 0 || kcal > 8000){
-    noteSync(false, `Ogiltigt värde för aktiva kalorier i länken (${String(raw).slice(0,20)})`);
-    return;
-  }
-  if(!ghConfigured()){
-    noteSync(false, 'Aktiva kalorier kunde inte sparas – GitHub är inte inställt i den här webbläsaren');
-    return;
-  }
-  const data = await loadDay(dateStr);
-  data.exercise = (data.exercise || []).filter(e => !e.active);
-  if(kcal > 0) data.exercise.push({ name:'Aktiva kalorier', kcal, active:true, time:'21:00', source:'halsa' });
-  const [y,m,d] = dateStr.split('-').map(Number);
-  state.currentDate = new Date(y, m-1, d);
-  state.view = 'day';
-  const ok = await saveDay(dateStr, data);
-  if(ok) noteSync(true, `Aktiva kalorier från Hälsa: ${kcal} kcal sparade för ${dateStr === todayYmd() ? 'idag' : dateStr}`);
-}
-
 async function init(){
   loadGhConfig();
   loadAiKey();
@@ -5311,7 +5244,6 @@ async function init(){
       applyBundle(bundle);
     }
   }
-  await handleUrlParams();
   render();
 }
 init();
