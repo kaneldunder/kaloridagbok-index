@@ -725,6 +725,21 @@
   .dh-prot .bar{height:4px; border-radius:2px; background:var(--line); overflow:hidden;}
   .dh-prot .bar i{display:block; height:100%; border-radius:2px;}
 
+  .mealsum{
+    width:100%; display:flex; align-items:center; gap:10px; margin:6px 0 0; padding:12px 14px;
+    background:var(--card); border:1px solid var(--line); border-radius:16px; color:var(--ink);
+    font-family:inherit; text-align:left; cursor:pointer;
+  }
+  .mealsum .ms-l{flex:1; min-width:0; display:flex; flex-direction:column; gap:2px;}
+  .mealsum .ms-l b{font-size:14px; font-weight:600;}
+  .mealsum .ms-l small{font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .mealsum .ms-r{font-size:12.5px; color:var(--muted); white-space:nowrap;}
+  .mealsum .ms-r b{color:var(--ink); font-weight:600;}
+  .mealsum .ms-chev{flex-shrink:0; color:var(--muted);}
+  .missmini{
+    display:block; margin:8px auto 0; border:none; background:transparent; padding:6px 4px;
+    color:var(--gold-ink); font-family:inherit; font-size:12.5px; cursor:pointer;
+  }
   body.hasqbar{padding-bottom:96px;}
   .qbar{
     position:fixed; left:0; right:0; bottom:0; z-index:20;
@@ -2048,13 +2063,28 @@ async function renderDay(content){
   const dash = circumference * (pct/100);
   const overGoal = t.net > goal;
 
+  const mealsExpanded = !!(state.mealsOpen || state.openForm || state.editingEntry || state.editingTime || state.selectedEntries.size);
+  const foodKcal = data.food.reduce((s,f) => s + (Number(f.kcal)||0), 0);
+  const missN = (ymd(state.currentDate) === todayYmd()) ? missingDays().length : 0;
   content.innerHTML = `
     ${dayHeroHTML(data, t)}
 
+    ${!mealsExpanded ? `
+    <button class="mealsum" id="mealToggle" aria-expanded="false">
+      <span class="ms-l">
+        <b>${data.food.length ? 'Dagens måltider' : 'Inga måltider ännu'}</b>
+        <small>${data.food.length ? escapeHtml(data.food.map(f => f.name).join(' · ')) : 'Skriv vad du ätit i fältet nedan'}</small>
+      </span>
+      ${data.food.length ? `<span class="ms-r"><b>${data.food.length}</b> st · <b>${foodKcal.toLocaleString('sv-SE')}</b> kcal</span>` : ''}
+      <svg class="ms-chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    ${missN ? `<button class="missmini" id="missOpen">${missN === 1 ? '1 dag' : missN + ' dagar'} saknas senaste veckan ›</button>` : ''}
+    ` : `
     ${missingDaysNotice()}
     <div class="sechead">
       <div class="sectitle" style="margin:0;">Måltider</div>
       ${state.openForm ? '' : `<div class="secactions">
+        <button class="secbtn" id="mealToggle" aria-expanded="true">Dölj</button>
         <button class="secbtn" id="addFood">+ Lägg till</button>
       </div>`}
     </div>
@@ -2089,11 +2119,16 @@ async function renderDay(content){
             ? entryEditRow(e,i,'exercise') : entryRow(e,i,'exercise')).join('')
           : `<div class="empty">Ingen träning loggad</div>`}`;
     })()}
+    `}
     ${!state.openForm && state.selectedEntries.size === 0 ? quickBarHTML() : ''}
   `;
   document.body.classList.toggle('hasqbar', !state.openForm && state.selectedEntries.size === 0);
   const wkLbl = document.getElementById('toWeek');
   if(wkLbl) wkLbl.innerHTML = weekLabelHTML(state.currentDate);
+  const mealToggle = document.getElementById('mealToggle');
+  if(mealToggle) mealToggle.onclick = () => { state.mealsOpen = !mealsExpanded; renderContent(); };
+  const missOpen = document.getElementById('missOpen');
+  if(missOpen) missOpen.onclick = () => { state.mealsOpen = true; renderContent(); };
 
   content.querySelectorAll('.wkday').forEach(btn => {
     btn.onclick = () => {
