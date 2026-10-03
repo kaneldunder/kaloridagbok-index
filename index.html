@@ -749,7 +749,21 @@
     width:40px; height:40px; flex-shrink:0; border-radius:50%; border:none; background:var(--gold); color:var(--plate-ink);
     display:flex; align-items:center; justify-content:center; cursor:pointer;
   }
+  .qb-sugs{
+    max-width:520px; margin:0 auto 8px; display:flex; align-items:center; gap:6px;
+    overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch;
+  }
+  .qb-sugs::-webkit-scrollbar{display:none;}
+  .qb-sugicon{color:var(--muted); display:flex; flex-shrink:0;}
+  .qb-sug{
+    flex-shrink:0; height:34px; padding:0 12px; border-radius:999px; border:1px solid #4E7464;
+    background:rgba(37,69,58,.95); color:var(--ink); font-family:inherit; font-size:13px; white-space:nowrap; cursor:pointer;
+  }
+  .qb-sug b{font-weight:600; color:var(--gold-ink); margin-left:3px;}
+  .qb-sug:disabled{opacity:.5;}
+  body.hasqbar.hassugs{padding-bottom:140px;}
   @media(min-width:820px){ .qbar-in{max-width:700px;} }
+  @media(min-width:820px){ .qb-sugs{max-width:700px;} }
 </style>
 </head>
 <body>
@@ -1331,12 +1345,9 @@ async function ghLoadBundle(){
   }
 }
 
-async function ghSaveBundle(retry = true){
-  if(!ghConfigured()){
-    noteSync(false, 'GitHub ej konfigurerat – fyll i under Inställningar');
-    return false;
-  }
-  const bundle = {
+/* ---- Synk: senast synkade version används som bas för en trevägssammanslagning ---- */
+function bundleFromState(){
+  return {
     settings: state.settings,
     weights: state.weights,
     favorites: state.favorites,
@@ -1344,16 +1355,78 @@ async function ghSaveBundle(retry = true){
     skippedDays: state.skippedDays,
     days: state.cache
   };
+}
+function snapshotSyncBase(bundle){
+  try{ state.syncBase = JSON.parse(JSON.stringify(bundle || bundleFromState())); }catch(e){ state.syncBase = null; }
+}
+function applyBundle(bundle){
+  if(bundle.settings) state.settings = bundle.settings;
+  if(bundle.weights) state.weights = bundle.weights;
+  if(bundle.favorites) state.favorites = bundle.favorites;
+  if(bundle.pantry){
+    state.pantry = bundle.pantry.map(p => ({
+      ...p,
+      portion: p.portion || (p.unit === 'st' ? 1 : 100)
+    }));
+  }
+  if(bundle.skippedDays) state.skippedDays = bundle.skippedDays;
+  if(bundle.days) state.cache = bundle.days;
+  snapshotSyncBase(bundle);
+}
+/* Det som ändrats här sedan senaste synk vinner, allt annat tas från GitHub.
+   Dagar och vikter slås ihop per datum, övrigt per del. */
+function mergeBundles(base, local, remote){
+  const J = v => JSON.stringify(v === undefined ? null : v);
+  base = base || {};
+  const pick = k => (J(local[k]) !== J(base[k])) ? local[k] : (remote[k] !== undefined ? remote[k] : local[k]);
+  const out = {
+    settings: pick('settings'),
+    favorites: pick('favorites'),
+    pantry: pick('pantry'),
+    skippedDays: pick('skippedDays'),
+    days: {},
+    weights: []
+  };
+  const bd = base.days || {}, ld = local.days || {}, rd = remote.days || {};
+  new Set([...Object.keys(ld), ...Object.keys(rd)]).forEach(k => {
+    const changedHere = J(ld[k]) !== J(bd[k]);
+    const v = changedHere ? ld[k] : (k in rd ? rd[k] : ld[k]);
+    if(v !== undefined && v !== null) out.days[k] = v;
+  });
+  const byDate = a => Object.fromEntries((a || []).map(w => [w.date, w]));
+  const bw = byDate(base.weights), lw = byDate(local.weights), rw = byDate(remote.weights);
+  new Set([...Object.keys(lw), ...Object.keys(rw), ...Object.keys(bw)]).forEach(d => {
+    const changedHere = J(lw[d]) !== J(bw[d]);
+    const v = changedHere ? lw[d] : rw[d];
+    if(v) out.weights.push(v);
+  });
+  out.weights.sort((a,b) => a.date.localeCompare(b.date));
+  return out;
+}
+
+async function ghSaveBundle(retry = true){
+  if(!ghConfigured()){
+    noteSync(false, 'GitHub ej konfigurerat – fyll i under Inställningar');
+    return false;
+  }
+  const sentJson = JSON.stringify(bundleFromState());
+  const bundle = JSON.parse(sentJson);
   try{
     const body = {
       message: `Uppdatera kaloridagbok ${new Date().toISOString()}`,
-      content: b64EncodeUnicode(JSON.stringify(bundle)),
+      content: b64EncodeUnicode(sentJson),
       branch: state.gh.branch || 'main'
     };
     if(state.gh.sha) body.sha = state.gh.sha;
     const res = await ghRequest({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if(res.status === 409 && retry){
-      await ghLoadBundle();
+    if(retry && (res.status === 409 || res.status === 422)){
+      // Någon annan enhet har sparat sedan vi hämtade — slå ihop istället för att skriva över
+      const local = bundleFromState();
+      const remote = await ghLoadBundle();
+      if(remote){
+        applyBundle(mergeBundles(state.syncBase, local, remote));
+        snapshotSyncBase(remote); // servern har nu remote — våra ändringar räknas mot den
+      }
       return await ghSaveBundle(false);
     }
     if(!res.ok){
@@ -1362,6 +1435,7 @@ async function ghSaveBundle(retry = true){
     }
     const json = await res.json();
     state.gh.sha = json.content.sha;
+    snapshotSyncBase(bundle);
     noteSync(true, 'Sparat till GitHub');
     return true;
   }catch(e){
@@ -1463,17 +1537,7 @@ function render(){
     refreshBtn.textContent = '…';
     const bundle = await ghLoadBundle();
     if(bundle){
-      if(bundle.settings) state.settings = bundle.settings;
-      if(bundle.weights) state.weights = bundle.weights;
-      if(bundle.favorites) state.favorites = bundle.favorites;
-      if(bundle.pantry){
-        state.pantry = bundle.pantry.map(p => ({
-          ...p,
-          portion: p.portion || (p.unit === 'st' ? 1 : 100)
-        }));
-      }
-      if(bundle.skippedDays) state.skippedDays = bundle.skippedDays;
-      if(bundle.days) state.cache = bundle.days;
+      applyBundle(bundle);
     }
     refreshBtn.disabled = false;
     refreshBtn.textContent = '⟳';
@@ -1904,6 +1968,11 @@ function dayHeroHTML(data, t){
   const shownW = wToday ? wToday.kg : (prevW ? prevW.kg : (last ? last.kg : ''));
   const delta = (wToday && prevW) ? wToday.kg - prevW.kg : null;
   const wVal = shownW !== '' ? Number(shownW).toFixed(1).replace('.', ',') : '';
+  const trendSeries = weightTrendSeries();
+  const trendNow = trendSeries[dateStr];
+  const firstW = ws.length ? ws[0].date : null;
+  const histDays = firstW ? (new Date(dateStr) - new Date(firstW)) / 86400000 : 0;
+  const rate = (histDays >= 7) ? trendRatePerWeek(dateStr) : null;
 
   // Text under tallriken
   let note;
@@ -1933,7 +2002,9 @@ function dayHeroHTML(data, t){
     ${weekStripHTML()}
     <div class="dh-chips">
       <span class="dh-status" style="color:${sCol}; background:${sBg};"><i></i>${statusLabel}</span>
-      <label class="wchip" title="Dagens vikt"><input type="text" inputmode="decimal" id="weightInput" value="${wVal}" placeholder="—" aria-label="Vikt i kg">kg${delta !== null ? ` <span style="color:${delta<=0?'var(--sage)':'var(--rust)'}">${signed(delta,1)}</span>` : ''}</label>
+      <label class="wchip" title="${rate !== null ? 'Trendvikt ' + kgFmt(Math.round(trendNow*10)/10) + ' kg, förändring senaste veckan' : 'Dagens vikt'}"><input type="text" inputmode="decimal" id="weightInput" value="${wVal}" placeholder="—" aria-label="Vikt i kg">kg${
+        rate !== null ? ` <span style="color:${rate<=0?'var(--sage)':'var(--rust)'}">${signed(rate,1)}/v</span>`
+        : delta !== null ? ` <span style="color:${delta<=0?'var(--sage)':'var(--rust)'}">${signed(delta,1)}</span>` : ''}</label>
     </div>
     <div class="dh-plate">${plate.svg}
       <div class="dh-center">
@@ -1946,7 +2017,7 @@ function dayHeroHTML(data, t){
     <div class="dh-row">
       ${baseline ? `<label class="dh-active ${activeVal !== '' ? 'filled' : ''}">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>
-        <span class="lbl"><b>Aktiva kalorier</b><small>gör tallriken större</small></span>
+        <span class="lbl"><b>Aktiva kalorier</b><small>${activeEntry && activeEntry.source === 'halsa' ? 'hämtat från Hälsa' : 'gör tallriken större'}</small></span>
         <input type="text" inputmode="numeric" id="activeInput" value="${activeVal}" placeholder="0" aria-label="Aktiva kalorier">
       </label>` : ''}
       ${mt ? `<div class="dh-prot ${baseline ? '' : 'wide'}">
@@ -1957,8 +2028,52 @@ function dayHeroHTML(data, t){
     </div>`;
 }
 
+function escapeHtml(v){
+  return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ---- Förslag efter tid på dygnet ----
+   Det du brukar äta runt den här tiden de senaste 6 veckorna,
+   viktat efter hur nära i tid och hur nyligen. Redan loggat idag hoppas över. */
+function timeSuggestions(max){
+  if(ymd(state.currentDate) !== todayYmd()) return [];
+  const now = new Date();
+  const nowMin = now.getHours()*60 + now.getMinutes();
+  const toMin = t => { const m = /^(\d{1,2}):(\d{2})/.exec(t||''); return m ? Number(m[1])*60 + Number(m[2]) : null; };
+  const norm = n => String(n||'').trim().toLowerCase().replace(/\s+/g,' ');
+  const today = state.cache[todayYmd()];
+  const loggedToday = new Set((today ? today.food : []).map(f => norm(f.name)));
+  const cand = {};
+  for(let age = 1; age <= 42; age++){
+    const d = new Date(now); d.setDate(d.getDate() - age);
+    const day = state.cache[ymd(d)];
+    if(!day || !day.food) continue;
+    day.food.forEach(f => {
+      const k = norm(f.name), m = toMin(f.time);
+      if(!k || m === null || !(Number(f.kcal) > 0) || loggedToday.has(k)) return;
+      const diff = Math.abs(m - nowMin);
+      if(diff > 100) return;
+      const w = (1 - diff/130) * (1 - age/50);
+      const c = cand[k] || (cand[k] = { score:0, n:0, item:f, age });
+      c.score += w; c.n++;
+      if(age < c.age){ c.item = f; c.age = age; }
+    });
+  }
+  return Object.values(cand)
+    .filter(c => c.n >= 2 || c.score > 0.8)
+    .sort((a,b) => b.score - a.score)
+    .slice(0, max || 4)
+    .map(c => c.item);
+}
+
 function quickBarHTML(){
-  return `<div class="qbar"><div class="qbar-in">
+  const sug = timeSuggestions(4);
+  state.timeSugs = sug;
+  const chips = sug.length ? `<div class="qb-sugs" aria-label="Brukar du äta nu">
+      <span class="qb-sugicon" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+      ${sug.map((f,i) => `<button type="button" class="qb-sug" data-sug="${i}">${escapeHtml(f.name.length > 26 ? f.name.slice(0,25) + '…' : f.name)} <b>${f.kcal}</b></button>`).join('')}
+    </div>` : '';
+  return `<div class="qbar">${chips}<div class="qbar-in">
     <button type="button" class="qb-round" id="qbCam" aria-label="Fota måltid" title="Fota måltid">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
     </button>
@@ -2031,6 +2146,7 @@ async function renderDay(content){
     ${!state.openForm && state.selectedEntries.size === 0 ? quickBarHTML() : ''}
   `;
   document.body.classList.toggle('hasqbar', !state.openForm && state.selectedEntries.size === 0);
+  document.body.classList.toggle('hassugs', !!document.querySelector('.qb-sugs'));
   const wkLbl = document.getElementById('toWeek');
   if(wkLbl) wkLbl.innerHTML = weekLabelHTML(state.currentDate);
 
@@ -2075,6 +2191,19 @@ async function renderDay(content){
       estimateMealPhoto(f);
     };
   }
+  content.querySelectorAll('.qb-sug').forEach(btn => {
+    btn.onclick = async () => {
+      const src = (state.timeSugs || [])[Number(btn.dataset.sug)];
+      if(!src) return;
+      const copy = JSON.parse(JSON.stringify(src));
+      copy.time = timeForEntry(copy.name, copy.mealType);
+      data.food.push(copy);
+      sortByTime(data.food);
+      btn.disabled = true;
+      await saveDay(dateStr, data);
+      renderContent();
+    };
+  });
   const qbFav = document.getElementById('qbFav');
   if(qbFav) qbFav.onclick = () => {
     state.openForm = 'favorites'; state.confirmDelFav = null; state.mealType = null; renderContent();
@@ -4045,18 +4174,92 @@ function calcBMR(weight, height, age, sex){
   const base = 10*weight + 6.25*height - 5*age;
   return Math.round(sex === 'kvinna' ? base - 161 : base + 5);
 }
+/* ---- Trendvikt ----
+   Exponentiellt glidande medelvärde (10 % per dag) över dagliga värden, där dagar
+   utan vägning fylls i linjärt. Dämpar vätskesvängningar så att riktningen syns. */
+function weightTrendSeries(){
+  const ws = state.weights.filter(w => w && w.date && Number(w.kg) > 0)
+    .slice().sort((a,b) => a.date.localeCompare(b.date));
+  if(!ws.length) return {};
+  const dayMs = 86400000;
+  const toD = k => new Date(k + 'T12:00:00');
+  const first = toD(ws[0].date);
+  const lastD = new Date(Math.max(toD(ws[ws.length-1].date), toD(todayYmd())));
+  const out = {};
+  let j = 0, trend = Number(ws[0].kg);
+  for(let d = new Date(first); d <= lastD; d = new Date(d.getTime() + dayMs)){
+    const k = ymd(d);
+    while(j < ws.length - 1 && ws[j+1].date <= k) j++;
+    let v;
+    if(ws[j].date === k || j === ws.length - 1) v = Number(ws[j].kg);
+    else {
+      const a = ws[j], b = ws[j+1];
+      const t = (d - toD(a.date)) / (toD(b.date) - toD(a.date));
+      v = Number(a.kg) + (Number(b.kg) - Number(a.kg)) * t;
+    }
+    trend = trend + 0.1 * (v - trend);
+    out[k] = trend;
+  }
+  return out;
+}
+/* Trendens förändring per vecka (kg) fram till ett datum. */
+function trendRatePerWeek(dateStr){
+  const tr = weightTrendSeries();
+  const d = new Date((dateStr || todayYmd()) + 'T12:00:00');
+  const back = new Date(d); back.setDate(d.getDate() - 7);
+  const a = tr[ymd(back)], b = tr[ymd(d)];
+  return (a !== undefined && b !== undefined) ? b - a : null;
+}
+
+/* ---- Uppmätt förbrukning ----
+   Energibalans baklänges: om du ätit i snitt X netto och vikten (linjär trend) ändrats
+   Y kg/dag, är förbrukningen X − Y·7700. Räknas på de senaste 28 dagarna t.o.m. igår.
+   Jämförbar med formelns värde: båda gäller utöver de aktiva kalorier du loggar. */
+function measuredExpenditure(){
+  const days = 28;
+  const end = new Date(); end.setHours(12,0,0,0); end.setDate(end.getDate() - 1);
+  const start = new Date(end); start.setDate(end.getDate() - (days - 1));
+  const logged = [];
+  for(let i = 0; i < days; i++){
+    const d = new Date(start); d.setDate(start.getDate() + i);
+    const day = state.cache[ymd(d)];
+    if(day && day.food && day.food.length){
+      const t = dayTotals(day);
+      if(t.intake > 0) logged.push(t.net);
+    }
+  }
+  const sKey = ymd(start), eKey = todayYmd();
+  const ws = state.weights.filter(w => w.date >= sKey && w.date <= eKey && Number(w.kg) > 0)
+    .sort((a,b) => a.date.localeCompare(b.date));
+  const res = { days, loggedDays: logged.length, weighIns: ws.length };
+  if(logged.length < 14){ res.reason = `Behöver minst 14 loggade dagar av de senaste ${days} — du har ${logged.length}.`; return res; }
+  const t0 = new Date(sKey + 'T12:00:00');
+  const pts = ws.map(w => ({ x: (new Date(w.date + 'T12:00:00') - t0) / 86400000, y: Number(w.kg) }));
+  const span = pts.length ? pts[pts.length-1].x - pts[0].x : 0;
+  if(pts.length < 4 || span < 14){ res.reason = `Behöver minst 4 vägningar som spänner över 2 veckor — du har ${pts.length}.`; return res; }
+  const mx = pts.reduce((s,p)=>s+p.x,0)/pts.length, my = pts.reduce((s,p)=>s+p.y,0)/pts.length;
+  const slope = pts.reduce((s,p)=>s+(p.x-mx)*(p.y-my),0) / pts.reduce((s,p)=>s+(p.x-mx)**2,0);
+  const avgNet = Math.round(logged.reduce((s,v)=>s+v,0) / logged.length);
+  const E = Math.round((avgNet - slope * 7700) / 10) * 10;
+  Object.assign(res, { avgNet, kgPerWeek: slope * 7, tdee: E, coverage: logged.length / days });
+  if(E < 1000 || E > 4500){ res.reason = `Uträkningen gav ${E} kcal, vilket verkar orimligt — troligen saknas måltider i loggen.`; res.tdee = null; }
+  return res;
+}
+
 function goalSuggestion(){
   const s = state.settings;
   const w = currentWeightKg();
   const bmr = calcBMR(w, s.height, s.age, s.sex);
   if(!bmr) return null;
   const act = Number(s.activity) || 1.3;
-  const tdee = Math.round(bmr * act);
+  const formulaTdee = Math.round(bmr * act);
+  const measured = !!(s.useMeasured && Number(s.measuredTdee) > 0);
+  const tdee = measured ? Number(s.measuredTdee) : formulaTdee;
   const deficit = Number(s.deficit)||0;
   const target = tdee - deficit;
   const baselineMode = act <= 1.0;
   return {
-    weight: w, bmr, tdee, deficit, target, act, baselineMode,
+    weight: w, bmr, tdee, formulaTdee, measured, deficit, target, act, baselineMode,
     kgPerWeek: (deficit * 7 / 7700),
     tooLow: baselineMode ? (target < 1200) : (target < 1500)
   };
@@ -4429,6 +4632,8 @@ function weightSvg(ws){
   const down = ws[ws.length-1].kg <= ws[0].kg;
   const col = down ? 'var(--sage)' : 'var(--rust)';
   const fmt = v => String(Math.round(v*10)/10).replace('.', ',');
+  const tr = ws.length >= 3 ? weightTrendSeries() : {};
+  const trendLine = ws.length >= 3 ? ws.map((w,i) => tr[w.date] !== undefined ? `${x(i).toFixed(1)},${y(tr[w.date]).toFixed(1)}` : null).filter(Boolean).join(' ') : '';
   return `<defs>
       <linearGradient id="${uid}" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="${down?'var(--sage)':'var(--rust)'}" stop-opacity=".18"/>
@@ -4440,9 +4645,12 @@ function weightSvg(ws){
     <line x1="${padL}" y1="${y(hi)}" x2="${W-padR}" y2="${y(hi)}" stroke="var(--line)" stroke-width="1"/>
     <line x1="${padL}" y1="${y(lo)}" x2="${W-padR}" y2="${y(lo)}" stroke="var(--line)" stroke-width="1"/>
     <polygon points="${padL},${y(bot)} ${line} ${x(ws.length-1).toFixed(1)},${y(bot)}" fill="url(#${uid})"/>
-    <polyline points="${line}" fill="none" stroke="${col}" stroke-width="2.2"
+    <polyline points="${line}" fill="none" stroke="${col}" stroke-width="1.6" stroke-opacity=".55"
       stroke-linecap="round" stroke-linejoin="round"/>
-    ${ws.map((w,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(w.kg).toFixed(1)}" r="${i===ws.length-1?4:2.6}" fill="${col}"/>`).join('')}`;
+    ${trendLine ? `<polyline points="${trendLine}" fill="none" stroke="var(--ink)" stroke-width="2.4"
+      stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="${W-padR}" y="${padT-2}" text-anchor="end" class="axlbl" style="fill:var(--ink)">— trend</text>` : ''}
+    ${ws.map((w,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(w.kg).toFixed(1)}" r="${i===ws.length-1?3.6:2.2}" fill="${col}"/>`).join('')}`;
 }
 
 /* ---------- SETTINGS ---------- */
@@ -4469,14 +4677,19 @@ function calcResultHTML(){
   const applied = Number(state.settings.dailyGoal) === r.target;
   return `
     <div class="compare" style="margin-top:6px;">
-      <div class="calcline"><span>Vilometabolism (BMR)</span><b>${r.bmr} kcal</b></div>
+      ${r.measured
+        ? `<div class="calcline"><span>Uppmätt förbrukning</span><b>${r.tdee} kcal</b></div>
+           <div class="calcline" style="font-size:12px;"><span>(formeln skulle ge ${r.formulaTdee} kcal)</span><b></b></div>`
+        : `<div class="calcline"><span>Vilometabolism (BMR)</span><b>${r.bmr} kcal</b></div>
       ${r.baselineMode
         ? ''
-        : `<div class="calcline"><span>× daglig aktivitet ${r.act}</span><b>${r.tdee} kcal</b></div>`}
+        : `<div class="calcline"><span>× daglig aktivitet ${r.act}</span><b>${r.tdee} kcal</b></div>`}`}
       <div class="calcline"><span>− underskott</span><b>−${r.deficit} kcal</b></div>
       <div class="calcline total"><span>${r.baselineMode ? 'Baslinjemål' : 'Föreslaget mål'}</span><b>${r.target} kcal</b></div>
       <div class="cmp-note">
-        Baserat på ${r.weight} kg, ${state.settings.height} cm, ${state.settings.age} år (Mifflin-St Jeor).
+        ${r.measured
+          ? `Baserat på din egen logg och vikttrend.`
+          : `Baserat på ${r.weight} kg, ${state.settings.height} cm, ${state.settings.age} år (Mifflin-St Jeor).`}
         Motsvarar ca ${r.kgPerWeek.toFixed(2).replace('.',',')} kg/vecka.
       </div>
       ${r.baselineMode
@@ -4499,11 +4712,41 @@ function calcResultHTML(){
         ${applied ? '✓ Detta är ditt nuvarande mål' : 'Använd ' + r.target + ' kcal som mål'}
       </button>
       ${goalDriftNote()}
-      <div class="cmp-note" style="margin-top:8px;">
-        Formeln har en spridning på ungefär ±10 %. Efter några veckor säger jämförelsen mellan
-        loggat underskott och faktisk viktförändring i vecko- och månadsvyn mer än uträkningen.
+    </div>
+    ${measuredBlockHTML(r)}`;
+}
+
+function measuredBlockHTML(r){
+  const m = measuredExpenditure();
+  const s = state.settings;
+  const fmtKg = v => (v > 0 ? '+' : '') + v.toFixed(2).replace('.', ',').replace('-', '−');
+  let body;
+  if(!m.tdee){
+    body = `<div class="cmp-note">${m.reason || 'Inte tillräckligt med data än.'}</div>
+      <div class="cmp-note">Formeln har en spridning på ungefär ±10 %. När du loggat några veckor räknar appen ut
+      din verkliga förbrukning från vad du ätit och hur vikten faktiskt rört sig.</div>`;
+  } else {
+    const diff = m.tdee - r.formulaTdee;
+    const newTarget = m.tdee - r.deficit;
+    const current = s.useMeasured && Number(s.measuredTdee) === m.tdee;
+    body = `
+      <div class="calcline"><span>Snitt netto, ${m.loggedDays} loggade dagar</span><b>${m.avgNet} kcal</b></div>
+      <div class="calcline"><span>Vikttrend</span><b>${fmtKg(m.kgPerWeek)} kg/v</b></div>
+      <div class="calcline total"><span>Uppmätt förbrukning</span><b>${m.tdee} kcal</b></div>
+      <div class="cmp-note">
+        Formeln säger ${r.formulaTdee} kcal — du förbrukar alltså ${Math.abs(diff) < 30 ? 'ungefär som formeln' : `${Math.abs(diff)} kcal ${diff > 0 ? 'mer' : 'mindre'} per dag än den tror`}.
+        Senaste ${m.days} dagarna, ${m.weighIns} vägningar.${m.coverage < 0.85 ? ' Några dagar saknas i loggen; saknade måltider gör att förbrukningen underskattas.' : ''}
       </div>
-    </div>`;
+      ${current
+        ? `<button class="addbtn" disabled style="border-style:solid; margin:10px 0 0; color:var(--sage); background:var(--sage-light); border-color:var(--sage-light);">✓ Används för ditt mål (${s.dailyGoal} kcal)</button>`
+        : `<button class="addbtn" id="useMeasured" style="border-style:solid; margin:10px 0 0; color:var(--on-accent); background:var(--sage); border-color:var(--sage);">
+            ${s.useMeasured ? 'Uppdatera' : 'Använd uppmätt förbrukning'} → mål ${newTarget} kcal</button>`}`;
+  }
+  return `<div class="compare" style="margin-top:12px;">
+    <div class="k" style="margin-bottom:6px;">Din verkliga förbrukning</div>
+    ${body}
+    ${s.useMeasured ? `<button class="linkbtn" id="useFormula">Gå tillbaka till formeln</button>` : ''}
+  </div>`;
 }
 
 function renderSettings(content){
@@ -4655,6 +4898,25 @@ function renderSettings(content){
         renderContent();
       };
     });
+    const useM = document.getElementById('useMeasured');
+    if(useM) useM.onclick = async () => {
+      const m = measuredExpenditure();
+      if(!m.tdee) return;
+      state.settings.useMeasured = true;
+      state.settings.measuredTdee = m.tdee;
+      const r = goalSuggestion();
+      if(r){ state.settings.dailyGoal = r.target; state.settings.goalSetAtWeight = r.weight; }
+      await ghSaveBundle();
+      renderContent();
+    };
+    const useF = document.getElementById('useFormula');
+    if(useF) useF.onclick = async () => {
+      state.settings.useMeasured = false;
+      const r = goalSuggestion();
+      if(r){ state.settings.dailyGoal = r.target; state.settings.goalSetAtWeight = r.weight; }
+      await ghSaveBundle();
+      renderContent();
+    };
     const applyBtn = document.getElementById('applyGoal');
     if(applyBtn) applyBtn.onclick = async () => {
       const r = goalSuggestion();
@@ -4866,17 +5128,7 @@ function renderSettings(content){
     ghStatus.textContent = 'Ansluter…';
     const bundle = await ghLoadBundle();
     if(bundle){
-      if(bundle.settings) state.settings = bundle.settings;
-      if(bundle.weights) state.weights = bundle.weights;
-      if(bundle.favorites) state.favorites = bundle.favorites;
-      if(bundle.pantry){
-        state.pantry = bundle.pantry.map(p => ({
-          ...p,
-          portion: p.portion || (p.unit === 'st' ? 1 : 100)
-        }));
-      }
-      if(bundle.skippedDays) state.skippedDays = bundle.skippedDays;
-      if(bundle.days) state.cache = bundle.days;
+      applyBundle(bundle);
       ghStatus.innerHTML = '<span style="color:var(--sage)">✓ Anslutet och data hämtad.</span>';
     } else if(ghConfigured()){
       ghStatus.innerHTML = '<span style="color:var(--sage)">✓ Anslutet (ingen data i repo ännu — sparas vid första loggning).</span>';
@@ -4924,17 +5176,7 @@ function renderSettings(content){
     ioStatus.textContent = 'Importerar…';
     try{
       const bundle = JSON.parse(raw);
-      if(bundle.settings) state.settings = bundle.settings;
-      if(bundle.weights) state.weights = bundle.weights;
-      if(bundle.favorites) state.favorites = bundle.favorites;
-      if(bundle.pantry){
-        state.pantry = bundle.pantry.map(p => ({
-          ...p,
-          portion: p.portion || (p.unit === 'st' ? 1 : 100)
-        }));
-      }
-      if(bundle.skippedDays) state.skippedDays = bundle.skippedDays;
-      if(bundle.days) state.cache = bundle.days;
+      applyBundle(bundle);
       await ghSaveBundle();
       ioStatus.innerHTML = '<span style="color:var(--sage)">✓ Importerat och sparat till GitHub!</span>';
       renderContent();
@@ -4946,25 +5188,51 @@ function renderSettings(content){
 }
 
 /* ---------- INIT ---------- */
+/* ---- Aktiva kalorier via länk (t.ex. från en iOS-genväg som läser Hälsa) ----
+   ?aktiva=620  eller  ?aktiva=620&datum=2026-10-03
+   Värdet ersätter dagens aktiva kalorier. Parametrarna tas bort ur adressen efteråt. */
+async function handleUrlParams(){
+  let q;
+  try{ q = new URLSearchParams(location.search); }catch(e){ return; }
+  const raw = q.get('aktiva') !== null ? q.get('aktiva') : q.get('active');
+  if(raw === null) return;
+  let dateStr = q.get('datum') || todayYmd();
+  ['aktiva','active','datum'].forEach(k => q.delete(k));
+  try{
+    const rest = q.toString();
+    history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash);
+  }catch(e){}
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) dateStr = todayYmd();
+  const cleaned = String(raw).replace(/\s/g,'').replace(',', '.').replace(/[^0-9.]/g, '');
+  const kcal = /\d/.test(cleaned) ? Math.round(Number(cleaned)) : NaN;
+  if(!isFinite(kcal) || kcal < 0 || kcal > 8000){
+    noteSync(false, `Ogiltigt värde för aktiva kalorier i länken (${String(raw).slice(0,20)})`);
+    return;
+  }
+  if(!ghConfigured()){
+    noteSync(false, 'Aktiva kalorier kunde inte sparas – GitHub är inte inställt i den här webbläsaren');
+    return;
+  }
+  const data = await loadDay(dateStr);
+  data.exercise = (data.exercise || []).filter(e => !e.active);
+  if(kcal > 0) data.exercise.push({ name:'Aktiva kalorier', kcal, active:true, time:'21:00', source:'halsa' });
+  const [y,m,d] = dateStr.split('-').map(Number);
+  state.currentDate = new Date(y, m-1, d);
+  state.view = 'day';
+  const ok = await saveDay(dateStr, data);
+  if(ok) noteSync(true, `Aktiva kalorier från Hälsa: ${kcal} kcal sparade för ${dateStr === todayYmd() ? 'idag' : dateStr}`);
+}
+
 async function init(){
   loadGhConfig();
   loadAiKey();
   if(ghConfigured()){
     const bundle = await ghLoadBundle();
     if(bundle){
-      if(bundle.settings) state.settings = bundle.settings;
-      if(bundle.weights) state.weights = bundle.weights;
-      if(bundle.favorites) state.favorites = bundle.favorites;
-      if(bundle.pantry){
-        state.pantry = bundle.pantry.map(p => ({
-          ...p,
-          portion: p.portion || (p.unit === 'st' ? 1 : 100)
-        }));
-      }
-      if(bundle.skippedDays) state.skippedDays = bundle.skippedDays;
-      if(bundle.days) state.cache = bundle.days;
+      applyBundle(bundle);
     }
   }
+  await handleUrlParams();
   render();
 }
 init();
