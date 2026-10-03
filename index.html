@@ -71,7 +71,7 @@
     border-radius:14px; padding:4px; margin-bottom:18px;
   }
   nav.tabs button{
-    flex:1; border:none; background:transparent; padding:9px 4px;
+    flex:1; border:none; background:transparent; padding:9px 2px;
     font-family:inherit; font-size:13px; font-weight:600;
     color:var(--muted); border-radius:10px; cursor:pointer;
   }
@@ -645,12 +645,12 @@
   header.dayhdr .daynav{width:36px; height:40px; font-size:22px; color:var(--muted);}
   .iconbtn svg{display:block;}
   .viewmenu{
-    display:grid; grid-template-columns:repeat(4,1fr); gap:4px; background:var(--card);
+    display:grid; grid-template-columns:repeat(5,1fr); gap:3px; background:var(--card);
     border:1px solid var(--line); border-radius:14px; padding:4px; margin:0 0 12px;
   }
   .viewmenu button{
-    border:none; background:transparent; color:var(--muted); font-family:inherit; font-size:13.5px;
-    font-weight:600; padding:10px 4px; border-radius:10px; cursor:pointer;
+    border:none; background:transparent; color:var(--muted); font-family:inherit; font-size:13px;
+    font-weight:600; padding:10px 2px; border-radius:10px; cursor:pointer;
   }
   .viewmenu button.active{background:var(--ink); color:var(--on-accent);}
 
@@ -740,6 +740,27 @@
     display:block; margin:8px auto 0; border:none; background:transparent; padding:6px 4px;
     color:var(--gold-ink); font-family:inherit; font-size:12.5px; cursor:pointer;
   }
+  .statrange{grid-template-columns:repeat(3,1fr) !important;}
+  .stsub{font-weight:400; text-transform:none; letter-spacing:0; color:var(--muted); font-size:11.5px; margin-left:4px;}
+  .stem{font-style:normal; font-weight:400; font-size:11px; color:var(--muted); margin-left:2px;}
+  .strow{padding:8px 0; border-bottom:1px solid var(--line);}
+  .strow:first-child{padding-top:0;}
+  .strow-top{display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:13px; color:var(--muted);}
+  .strow-top b{color:var(--ink); font-weight:600;}
+  .strow-top > b{font-size:14px;}
+  .stbar{height:8px; border-radius:4px; background:var(--line); margin:6px 0 4px; overflow:hidden;}
+  .stbar i{display:block; height:100%; border-radius:4px; background:var(--z-train);}
+  .strow-sub{font-size:11.5px; color:var(--muted);}
+  .sttop{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line);}
+  .sttop-n{width:22px; height:22px; border-radius:50%; background:var(--field); color:var(--muted); font-size:12px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .sttop-name{flex:1; min-width:0; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .sttop-v{font-size:12.5px; color:var(--muted); white-space:nowrap;}
+  .stcmp{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .stcmp > div{background:var(--paper); border-radius:12px; padding:10px 12px;}
+  .stcmp .k{font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
+  .stcmp .v{font-size:19px; font-weight:600; margin-top:3px;}
+  .stline{font-size:11.5px; color:var(--muted); margin-top:4px; line-height:1.4;}
   body.hasqbar{padding-bottom:96px;}
   .qbar{
     position:fixed; left:0; right:0; bottom:0; z-index:20;
@@ -1467,9 +1488,9 @@ function dayTotals(data){
 function render(){
   const app = document.getElementById('app');
   const isDay = state.view === 'day';
-  const viewBtns = ['day','week','month','year'].map(v => `
+  const viewBtns = ['day','week','month','year','stats'].map(v => `
         <button data-view="${v}" class="${state.view===v?'active':''}">
-          ${{day:'Dag',week:'Vecka',month:'Månad',year:'År'}[v]}
+          ${{day:'Dag',week:'Vecka',month:'Månad',year:'År',stats:'Statistik'}[v]}
         </button>`).join('');
   app.innerHTML = `
     <header class="top ${isDay ? 'dayhdr' : ''}">
@@ -1481,7 +1502,7 @@ function render(){
           <button class="daynav" id="nextDay" title="Nästa dag" aria-label="Nästa dag">›</button>
         </div>` : `<h1 class="apptitle display">Kaloridagboken</h1>
         <div class="hdr-date" style="padding-left:2px;">${
-          {week:'Veckoöversikt',month:'Månadsöversikt',year:'Årsöversikt',settings:'Inställningar'}[state.view] || ''
+          {week:'Veckoöversikt',month:'Månadsöversikt',year:'Årsöversikt',stats:'Statistik',settings:'Inställningar'}[state.view] || ''
         }</div>`}
       </div>
       <div class="hdr-actions">
@@ -1560,6 +1581,7 @@ async function renderContent(){
   if(state.view === 'week') return renderWeek(content);
   if(state.view === 'month') return renderMonth(content);
   if(state.view === 'year') return renderYear(content);
+  if(state.view === 'stats') return renderStats(content);
   if(state.view === 'weight') return renderWeightView(content);
   if(state.view === 'settings') return renderSettings(content);
 }
@@ -4648,6 +4670,302 @@ function weightSvg(ws){
       stroke-linecap="round" stroke-linejoin="round"/>
       <text x="${W-padR}" y="${padT-2}" text-anchor="end" class="axlbl" style="fill:var(--ink)">— trend</text>` : ''}
     ${ws.map((w,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(w.kg).toFixed(1)}" r="${i===ws.length-1?3.6:2.2}" fill="${col}"/>`).join('')}`;
+}
+
+/* ---------- STATISTIK ---------- */
+const STAT_KINDS = [
+  { key:'frukost',   label:'Frukost' },
+  { key:'lunch',     label:'Lunch' },
+  { key:'mellanmal', label:'Mellanmål' },
+  { key:'middag',    label:'Middag' },
+  { key:'snack',     label:'Kvällsmål & snacks' },
+  { key:'alkohol',   label:'Alkohol' }
+];
+function hmToMin(t){ const m = /^(\d{1,2}):(\d{2})/.exec(t || ''); return m ? Number(m[1])*60 + Number(m[2]) : null; }
+function isAlcoholEntry(f){ return f.mealType === 'alkohol' || detectMealType(f.name) === 'alkohol'; }
+/* Måltidstyp: vald typ, annars namnet, annars klockslaget. */
+function statKind(f){
+  if(isAlcoholEntry(f)) return 'alkohol';
+  const mt = f.mealType || detectMealType(f.name);
+  if(mt === 'frukost' || mt === 'lunch' || mt === 'middag' || mt === 'mellanmal') return mt;
+  if(mt === 'snack') return 'snack';
+  const m = hmToMin(f.time);
+  if(m === null) return null;
+  if(m < 630) return 'frukost';
+  if(m < 870) return 'lunch';
+  if(m < 1020) return 'mellanmal';
+  if(m < 1290) return 'middag';
+  return 'snack';
+}
+const nf = v => Math.round(v).toLocaleString('sv-SE');
+function barPath(x, y, w, h, r){
+  if(h <= 0) return '';
+  r = Math.min(r, w/2, h);
+  return `M${x.toFixed(1)},${(y+h).toFixed(1)}V${(y+r).toFixed(1)}Q${x.toFixed(1)},${y.toFixed(1)} ${(x+r).toFixed(1)},${y.toFixed(1)}H${(x+w-r).toFixed(1)}Q${(x+w).toFixed(1)},${y.toFixed(1)} ${(x+w).toFixed(1)},${(y+r).toFixed(1)}V${(y+h).toFixed(1)}Z`;
+}
+/* Enkelt stapeldiagram, en serie. items: [{label, value, tip, strong}] */
+function statBars(items, opts = {}){
+  const W = 340, H = opts.h || 120, padL = 30, padR = 6, padT = 10, padB = 18;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const max = Math.max(1, ...items.map(i => i.value)) * 1.08;
+  const step = plotW / items.length, bw = Math.max(3, Math.min(28, step - (items.length > 12 ? 2 : 6)));
+  const y = v => padT + plotH - v / max * plotH;
+  const ticks = [0, max/2/1.08, max/1.08].map(v => Math.round(v));
+  const fmtT = opts.fmt || nf;
+  let out = ticks.map(t => `<line x1="${padL}" y1="${y(t).toFixed(1)}" x2="${W-padR}" y2="${y(t).toFixed(1)}" stroke="var(--line)" stroke-width="1"/>
+    <text x="${padL-5}" y="${(y(t)+3).toFixed(1)}" text-anchor="end" class="axlbl">${fmtT(t)}</text>`).join('');
+  items.forEach((it, i) => {
+    const cx = padL + step * i + step/2, x = cx - bw/2;
+    const h = Math.max(0, y(0) - y(it.value));
+    out += `<g><title>${escapeHtml(it.tip || (it.label + ': ' + fmtT(it.value)))}</title>
+      <rect x="${(padL + step*i).toFixed(1)}" y="${padT}" width="${step.toFixed(1)}" height="${plotH}" fill="transparent"/>
+      <path d="${barPath(x, y(it.value), bw, h, 3)}" fill="${it.strong ? 'var(--gold)' : 'var(--z-train)'}"/></g>`;
+    if(it.label !== '' && (!opts.labelEvery || i % opts.labelEvery === 0))
+      out += `<text x="${cx.toFixed(1)}" y="${H-4}" text-anchor="middle" class="axlbl">${it.label}</text>`;
+  });
+  return `<svg class="netchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${escapeHtml(opts.aria || '')}">${out}</svg>`;
+}
+
+function statsData(){
+  const range = state.statsRange || 90;
+  const end = new Date(); end.setHours(12,0,0,0); end.setDate(end.getDate() - 1); // idag räknas inte, dagen är inte slut
+  const allLogged = Object.keys(state.cache).filter(k => {
+    const d = state.cache[k];
+    return d && d.food && d.food.length && dayTotals(d).intake > 0 && !state.skippedDays.includes(k);
+  }).sort();
+  let start;
+  if(range === 'all') start = allLogged.length ? new Date(allLogged[0] + 'T12:00:00') : new Date(end);
+  else {
+    start = new Date(end); start.setDate(end.getDate() - (range - 1));
+    const first = allLogged.length ? new Date(allLogged[0] + 'T12:00:00') : null;
+    if(first && first > start) start = first;
+  }
+  const sKey = ymd(start), eKey = ymd(end);
+  const keys = allLogged.filter(k => k >= sKey && k <= eKey);
+  const spanDays = Math.round((end - start) / 86400000) + 1;
+  return { range, start, end, sKey, eKey, keys, allLogged, spanDays };
+}
+
+function renderStats(content){
+  const goal = state.settings.dailyGoal;
+  const mt = macroTargets();
+  const D = statsData();
+  const rangeBtns = [[30,'30 dagar'],[90,'90 dagar'],['all','All data']].map(([v,l]) =>
+    `<button data-range="${v}" class="${String(D.range) === String(v) ? 'active' : ''}">${l}</button>`).join('');
+  if(!D.keys.length){
+    content.innerHTML = `<nav class="viewmenu statrange">${rangeBtns}</nav><div class="card"><div class="empty">Ingen loggad data i perioden.</div></div>`;
+    wireStats(content); return;
+  }
+  const days = D.keys.map(k => ({ k, d: state.cache[k], t: dayTotals(state.cache[k]), date: new Date(k + 'T12:00:00') }));
+  const n = days.length;
+  const avg = arr => arr.length ? arr.reduce((s,v)=>s+v,0) / arr.length : 0;
+  const totalIntake = days.reduce((s,x)=>s+x.t.intake, 0);
+
+  // --- Översikt & sviter
+  const avgNet = avg(days.map(x => x.t.net));
+  const avgIntake = avg(days.map(x => x.t.intake));
+  const loggedSet = new Set(D.allLogged);
+  const skipped = new Set(state.skippedDays);
+  let logStreak = 0;
+  { const d = new Date(); d.setHours(12,0,0,0);
+    if(!loggedSet.has(ymd(d))) d.setDate(d.getDate() - 1);
+    for(;;){ const k = ymd(d); if(loggedSet.has(k)) logStreak++; else if(!skipped.has(k)) break; d.setDate(d.getDate() - 1); if(logStreak > 3650) break; } }
+  let planNow = 0, planBest = 0, run = 0;
+  { // längsta svit inom planen i perioden (dagar i följd, loggade)
+    let prev = null;
+    days.forEach(x => {
+      const consecutive = prev && Math.round((x.date - prev) / 86400000) === 1;
+      if(x.t.net <= goal){ run = consecutive || run === 0 ? run + 1 : 1; }
+      else run = 0;
+      if(!consecutive && x.t.net <= goal) run = 1;
+      planBest = Math.max(planBest, run);
+      prev = x.date;
+    });
+    const last = days[days.length-1];
+    planNow = (last && Math.round((D.end - last.date)/86400000) <= 0) ? run : 0;
+  }
+  const ws = state.weights.slice().sort((a,b)=>a.date.localeCompare(b.date));
+  const tr = weightTrendSeries();
+  const firstLog = D.allLogged[0];
+  const firstW = ws.length ? ws[0] : null;
+  const trendNow = tr[todayYmd()];
+  const kgTotal = (firstW && trendNow !== undefined) ? trendNow - firstW.kg : null;
+  const maint = maintenanceFor(goal);
+
+  // --- Måltider per typ
+  const kinds = STAT_KINDS.map(k => ({ ...k, days:0, kcal:0, prot:0 }));
+  const kindByKey = Object.fromEntries(kinds.map(k => [k.key, k]));
+  let bfHigh = 0;
+  days.forEach(x => {
+    const per = {};
+    x.d.food.forEach(f => {
+      const kk = statKind(f); if(!kk) return;
+      const p = per[kk] || (per[kk] = { kcal:0, prot:0 });
+      p.kcal += Number(f.kcal)||0; p.prot += Number(f.protein)||0;
+    });
+    Object.entries(per).forEach(([kk, v]) => {
+      const K = kindByKey[kk]; if(!K || v.kcal <= 0) return;
+      K.days++; K.kcal += v.kcal; K.prot += v.prot;
+    });
+    if(per.frukost && per.frukost.prot >= 25) bfHigh++;
+  });
+  const shownKinds = kinds.filter(k => k.days > 0);
+  const maxKind = Math.max(1, ...shownKinds.map(k => k.kcal / k.days));
+  const protDays = mt ? days.filter(x => x.t.protein >= mt.protein).length : 0;
+
+  // --- Topp 5
+  const norm = v => String(v||'').trim().toLowerCase().replace(/\s+/g,' ');
+  const groups = {};
+  days.forEach(x => x.d.food.forEach(f => {
+    const k = norm(f.name); if(!k) return;
+    const g = groups[k] || (groups[k] = { name: f.name, count:0, kcal:0 });
+    g.count++; g.kcal += Number(f.kcal)||0;
+  }));
+  const top = Object.values(groups).sort((a,b) => b.count - a.count || b.kcal - a.kcal).slice(0,5);
+
+  // --- När på dygnet
+  const hours = Array(24).fill(0); let timed = 0;
+  days.forEach(x => x.d.food.forEach(f => {
+    const m = hmToMin(f.time); const k = Number(f.kcal)||0;
+    if(m === null || k <= 0) return;
+    hours[Math.min(23, Math.floor(m/60))] += k; timed += k;
+  }));
+  const after18 = timed ? hours.slice(18).reduce((s,v)=>s+v,0) / timed : 0;
+  let half = null; { let acc = 0; for(let h=0; h<24; h++){ acc += hours[h]; if(acc >= timed/2){ half = h; break; } } }
+
+  // --- Vardag och helg
+  const wkd = days.filter(x => { const g = x.date.getDay(); return g >= 1 && g <= 4; });
+  const wke = days.filter(x => { const g = x.date.getDay(); return g === 0 || g >= 5; });
+  const alcOf = x => x.d.food.filter(isAlcoholEntry).reduce((s,f)=>s+(Number(f.kcal)||0),0);
+  const cmp = grp => ({ n: grp.length, intake: avg(grp.map(x=>x.t.intake)), net: avg(grp.map(x=>x.t.net)), alc: avg(grp.map(alcOf)), act: avg(grp.map(x=>x.t.burned)) });
+  const W1 = cmp(wkd), W2 = cmp(wke);
+
+  // --- Alkohol per vecka
+  const weekMap = new Map();
+  days.forEach(x => {
+    const mon = new Date(x.date); mon.setDate(mon.getDate() - (mon.getDay()+6)%7);
+    const k = ymd(mon);
+    const w = weekMap.get(k) || { mon, alc:0, intake:0, net:0, n:0, def:0 };
+    w.alc += alcOf(x); w.intake += x.t.intake; w.net += x.t.net; w.n++; w.def += (maint - x.t.net);
+    weekMap.set(k, w);
+  });
+  const weeks = [...weekMap.values()].sort((a,b) => a.mon - b.mon);
+  const alcTotal = days.reduce((s,x)=>s+alcOf(x),0);
+  const alcDays = days.filter(x => alcOf(x) > 0).length;
+  const alcPerWeek = weeks.length ? alcTotal / (D.spanDays / 7) : 0;
+
+  // --- Aktiva kalorier per veckodag
+  const wdNames = ['Mån','Tis','Ons','Tor','Fre','Lör','Sön'];
+  const act = wdNames.map(() => []);
+  days.forEach(x => { act[(x.date.getDay()+6)%7].push(x.t.burned); });
+  const actAvg = act.map(a => avg(a));
+  const actMaxI = actAvg.indexOf(Math.max(...actAvg));
+
+  // --- Bästa veckan
+  const fullWeeks = weeks.filter(w => w.n >= 5);
+  const best = fullWeeks.length ? fullWeeks.reduce((a,b) => b.def/b.n > a.def/a.n ? b : a) : null;
+
+  const rangeLbl = D.range === 'all' ? `sedan ${D.start.getDate()}/${D.start.getMonth()+1}` : `senaste ${D.range} dagarna`;
+  const pct = v => Math.round(v * 100) + ' %';
+  const diffTxt = (a, b) => { const d = Math.round(b - a); return (d >= 0 ? '+' : '−') + nf(Math.abs(d)); };
+
+  content.innerHTML = `
+    <nav class="viewmenu statrange">${rangeBtns}</nav>
+
+    <div class="card">
+      <div class="sectitle" style="margin-top:0;">Översikt <span class="stsub">${rangeLbl}</span></div>
+      <div class="summaryrow" style="margin-top:4px;">
+        <div class="stat"><div class="k">Loggade dagar</div><div class="v">${n}<em class="stem">/${D.spanDays}</em></div></div>
+        <div class="stat"><div class="k">Snitt netto</div><div class="v" style="color:${avgNetColor(Math.round(avgNet), goal)}">${nf(avgNet)}</div></div>
+        <div class="stat"><div class="k">Snitt intag</div><div class="v">${nf(avgIntake)}</div></div>
+      </div>
+      <div class="summaryrow">
+        <div class="stat"><div class="k">Loggat i rad</div><div class="v">${logStreak} <em class="stem">dagar</em></div></div>
+        <div class="stat"><div class="k">Inom planen i rad</div><div class="v">${planNow} <em class="stem">dagar</em></div></div>
+        <div class="stat"><div class="k">Längsta svit</div><div class="v">${planBest} <em class="stem">dagar</em></div></div>
+      </div>
+      ${firstLog ? `<div class="cmp-note" style="margin-top:10px;">Sedan du började ${new Date(firstLog+'T12:00:00').getDate()}/${new Date(firstLog+'T12:00:00').getMonth()+1}: ${D.allLogged.length} loggade dagar${kgTotal !== null ? `, trendvikten <b style="color:${kgTotal<=0?'var(--sage)':'var(--rust)'}">${signed(kgTotal,1)} kg</b>` : ''}.</div>` : ''}
+      ${best ? `<div class="cmp-note">Bästa veckan: <b>vecka ${weekNumber(best.mon)}</b> med i snitt ${nf(best.def/best.n)} kcal under förbrukningen per dag (≈ ${kgFmt((best.def/7700).toFixed(1))} kg på veckan).</div>` : ''}
+    </div>
+
+    <div class="sectitle">Dina måltider</div>
+    <div class="card">
+      ${shownKinds.map(k => `
+        <div class="strow">
+          <div class="strow-top"><b>${k.label}</b><span><b>${nf(k.kcal/k.days)}</b> kcal · ${nf(k.prot/k.days)} g protein</span></div>
+          <div class="stbar"><i style="width:${(k.kcal/k.days/maxKind*100).toFixed(1)}%"></i></div>
+          <div class="strow-sub">${pct(k.days/n)} av dagarna · ${pct(k.kcal / totalIntake)} av intaget</div>
+        </div>`).join('')}
+      <div class="cmp-note" style="margin-top:8px;">Snitt per dag då måltiden förekom. Måltider utan vald typ sorteras efter klockslag.</div>
+    </div>
+
+    <div class="sectitle">Protein</div>
+    <div class="card">
+      <div class="summaryrow" style="margin-top:0;">
+        <div class="stat"><div class="k">Snitt per dag</div><div class="v">${nf(avg(days.map(x=>x.t.protein)))} g${mt ? `<em class="stem">/${mt.protein}</em>` : ''}</div></div>
+        <div class="stat"><div class="k">Dagar med målet nått</div><div class="v">${mt ? protDays : '–'}<em class="stem">/${n}</em></div></div>
+        <div class="stat"><div class="k">Frukost ≥ 25 g</div><div class="v">${kindByKey.frukost.days ? pct(bfHigh / kindByKey.frukost.days) : '–'}</div></div>
+      </div>
+      ${shownKinds.filter(k=>k.key!=='alkohol').length ? `<div class="cmp-note" style="margin-top:10px;">Protein per måltid: ${shownKinds.filter(k=>k.key!=='alkohol').map(k => `${k.label.toLowerCase()} ${nf(k.prot/k.days)} g`).join(', ')}.</div>` : ''}
+    </div>
+
+    <div class="sectitle">Det du äter oftast</div>
+    <div class="card">
+      ${top.map((g,i) => `
+        <div class="sttop">
+          <span class="sttop-n">${i+1}</span>
+          <span class="sttop-name">${escapeHtml(g.name)}</span>
+          <span class="sttop-v">${g.count} ggr · ${pct(g.kcal / totalIntake)}</span>
+        </div>`).join('')}
+      <div class="cmp-note" style="margin-top:8px;">Andelen är hur stor del av allt intag i perioden den står för. Samma sak med olika stavning räknas separat.</div>
+    </div>
+
+    <div class="sectitle">När på dygnet</div>
+    <div class="card">
+      ${statBars(hours.map((v,h) => ({ label: h % 3 === 0 ? String(h).padStart(2,'0') : '', value: timed ? v / timed * 100 : 0,
+          tip: `${String(h).padStart(2,'0')}–${String(h+1).padStart(2,'0')}: ${timed ? (v/timed*100).toFixed(1).replace('.',',') : 0} % av kalorierna` })),
+        { fmt: v => v + '%', aria: 'Andel av kalorierna per timme' })}
+      <div class="cmp-note">${pct(after18)} av kalorierna äts efter 18.00.${half !== null ? ` Hälften av dagens kalorier är uppätna vid ungefär ${String(half+1).padStart(2,'0')}.00.` : ''}</div>
+    </div>
+
+    <div class="sectitle">Vardag och helg</div>
+    <div class="card">
+      <div class="stcmp">
+        <div><div class="k">Mån–tor <span class="stsub">${W1.n} dagar</span></div>
+          <div class="v">${nf(W1.intake)} <em class="stem">kcal intag</em></div>
+          <div class="stline">netto ${nf(W1.net)} · alkohol ${nf(W1.alc)} · aktivt ${nf(W1.act)}</div></div>
+        <div><div class="k">Fre–sön <span class="stsub">${W2.n} dagar</span></div>
+          <div class="v">${nf(W2.intake)} <em class="stem">kcal intag</em></div>
+          <div class="stline">netto ${nf(W2.net)} · alkohol ${nf(W2.alc)} · aktivt ${nf(W2.act)}</div></div>
+      </div>
+      ${W1.n && W2.n ? `<div class="cmp-note" style="margin-top:10px;">Helgdagarna ligger på <b>${diffTxt(W1.net, W2.net)} kcal netto</b> per dag jämfört med vardagarna.${Math.abs(W2.alc - W1.alc) >= 50 ? ` Alkoholen skiljer ${diffTxt(W1.alc, W2.alc)} kcal per dag.` : ''}</div>` : ''}
+    </div>
+
+    <div class="sectitle">Alkohol</div>
+    <div class="card">
+      <div class="summaryrow" style="margin-top:0;">
+        <div class="stat"><div class="k">Per vecka</div><div class="v">${nf(alcPerWeek)} <em class="stem">kcal</em></div></div>
+        <div class="stat"><div class="k">Av intaget</div><div class="v">${pct(totalIntake ? alcTotal/totalIntake : 0)}</div></div>
+        <div class="stat"><div class="k">Dagar med alkohol</div><div class="v">${alcDays}<em class="stem">/${n}</em></div></div>
+      </div>
+      ${weeks.length >= 2 ? statBars(weeks.map(w => ({ label: 'v' + weekNumber(w.mon), value: w.alc,
+          tip: `Vecka ${weekNumber(w.mon)}: ${nf(w.alc)} kcal alkohol (${w.n} loggade dagar)` })),
+        { aria:'Alkohol per vecka', labelEvery: weeks.length > 8 ? Math.ceil(weeks.length / 6) : 1 }) : ''}
+    </div>
+
+    <div class="sectitle">Aktiva kalorier per veckodag</div>
+    <div class="card">
+      ${statBars(actAvg.map((v,i) => ({ label: wdNames[i], value: v, strong: i === actMaxI && v > 0, tip: `${wdNames[i]}: i snitt ${nf(v)} aktiva kcal (${act[i].length} dagar)` })),
+        { aria:'Aktiva kalorier per veckodag' })}
+      <div class="cmp-note">Mest i rörelse på ${['måndagar','tisdagar','onsdagar','torsdagar','fredagar','lördagar','söndagar'][actMaxI]} (${nf(actAvg[actMaxI])} kcal i snitt), minst på ${['måndagar','tisdagar','onsdagar','torsdagar','fredagar','lördagar','söndagar'][actAvg.indexOf(Math.min(...actAvg))]}.</div>
+    </div>
+  `;
+  wireStats(content);
+}
+function wireStats(content){
+  content.querySelectorAll('.statrange button').forEach(b => {
+    b.onclick = () => { state.statsRange = b.dataset.range === 'all' ? 'all' : Number(b.dataset.range); renderContent(); };
+  });
 }
 
 /* ---------- SETTINGS ---------- */
