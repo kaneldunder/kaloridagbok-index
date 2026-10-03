@@ -461,6 +461,11 @@
   .netchart{width:100%; height:auto; display:block; margin:2px 0 2px;}
   .netchart .axlbl{font-size:9px; fill:var(--muted); font-family:inherit;}
   .netchart .goallbl{font-size:9px; fill:var(--gold); font-family:inherit; font-weight:600;}
+  .netchart .maintlbl{font-size:9px; fill:var(--rust); font-family:inherit; font-weight:600;}
+  .zonekey{display:flex; gap:11px; flex-wrap:wrap; margin:2px 0 2px 34px; font-size:10.5px; color:var(--muted);}
+  .zonekey span{display:flex; align-items:center; gap:4px;}
+  .zonekey i{width:8px; height:8px; border-radius:2px; display:block;}
+  .zonenote{border-left:2px solid var(--line); padding-left:9px; margin-top:6px;}
   .balancecurve .axlbl{font-size:9px; fill:var(--muted); font-family:inherit;}
   .activerow{
     display:flex; align-items:center; justify-content:space-between; gap:10px;
@@ -3449,7 +3454,10 @@ function netBarChart(results, goal, mode){
   const n = results.length;
   const W = 340, H = 150, padL = 34, padR = 6, padB = 18, padT = 8;
   const plotW = W - padL - padR, plotH = H - padT - padB;
-  const maxVal = Math.max(goal * 1.25, ...results.map(r => r.totals.net), 1);
+  // Förbrukningen (TDEE) är den verkliga gränsen: under den går vikten ned
+  const sug = goalSuggestion();
+  const maint = sug && sug.tdee > goal ? sug.tdee : null;
+  const maxVal = Math.max(goal * 1.25, maint ? maint * 1.12 : 0, ...results.map(r => r.totals.net), 1);
   const step = niceStep(maxVal);
   const top = Math.ceil(maxVal/step)*step;
   const y = v => padT + plotH - (v/top)*plotH;
@@ -3470,11 +3478,16 @@ function netBarChart(results, goal, mode){
       return `<rect x="${cx-bw/2}" y="${y(0)-3}" width="${bw}" height="3" rx="1.5" fill="var(--line)"/>`;
     }
     const v = Math.max(r.totals.net, 0);
-    const over = r.totals.net > goal;
+    // Grön: på plan · Guld: över målet men under förbrukningen, alltså
+    // fortfarande viktnedgång · Röd: över förbrukningen, alltså uppgång
+    const net = r.totals.net;
+    const col = net <= goal ? 'var(--sage)'
+              : (maint && net <= maint) ? 'var(--gold)'
+              : 'var(--rust)';
     const h = Math.max(y(v) < y(0) ? y(0)-y(v) : 0, 2);
     const isToday = ymd(r.date) === todayStr;
     return `<rect x="${cx-bw/2}" y="${y(v)}" width="${bw}" height="${h}" rx="${Math.min(3,bw/2)}"
-      fill="${over?'var(--rust)':'var(--sage)'}" opacity="${isToday?1:0.88}"/>
+      fill="${col}" opacity="${isToday?1:0.88}"/>
       ${isToday?`<rect x="${cx-bw/2-1.5}" y="${y(v)-1.5}" width="${bw+3}" height="${h+3}" rx="${Math.min(4,bw/2+1)}"
         fill="none" stroke="var(--ink)" stroke-width="1.2" opacity=".55"/>`:''}`;
   });
@@ -3491,12 +3504,20 @@ function netBarChart(results, goal, mode){
 
   return `<svg class="netchart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Netto per dag">
     ${grid.join('')}
+    ${maint ? `<line x1="${padL}" y1="${y(maint)}" x2="${W-padR}" y2="${y(maint)}"
+      stroke="var(--rust)" stroke-width="1.5" opacity=".75"/>
+    <text x="${W-padR}" y="${y(maint)-5}" text-anchor="end" class="maintlbl">förbrukning ${maint}</text>` : ''}
     <line x1="${padL}" y1="${y(goal)}" x2="${W-padR}" y2="${y(goal)}"
       stroke="var(--gold)" stroke-width="1.5" stroke-dasharray="5,4"/>
     <text x="${W-padR}" y="${y(goal)-5}" text-anchor="end" class="goallbl">mål ${goal}</text>
     ${bars.join('')}
     ${labels.join('')}
-  </svg>`;
+  </svg>
+  ${maint ? `<div class="zonekey">
+    <span><i style="background:var(--sage)"></i>på plan</span>
+    <span><i style="background:var(--gold)"></i>ned, men långsammare</span>
+    <span><i style="background:var(--rust)"></i>uppåt</span>
+  </div>` : ''}`;
 }
 
 /* Ackumulerad kaloribalans över perioden + kurva. */
@@ -3517,18 +3538,25 @@ function balanceBlock(results, goal, periodWord){
   const avgDev = Math.round(total / logged.length);
   const kg = Math.abs(total) / 7700;
 
+  // Rött bara när snittet ligger över förbrukningen — över målet men under
+  // den innebär fortfarande viktnedgång och förtjänar inte larmfärg
+  const sugB = goalSuggestion();
+  const avgNetB = Math.round(logged.reduce((a,r)=>a+r.totals.net,0)/logged.length);
+  const balCol = deficit ? 'var(--sage)'
+    : (sugB && avgNetB <= sugB.tdee) ? 'var(--gold)' : 'var(--rust)';
+
   return `
     <div class="compare">
       <div class="balancehead">
         <div>
           <div class="k">Kaloribalans ${periodWord}</div>
-          <div class="balanceval" style="color:${deficit?'var(--sage)':'var(--rust)'}">
+          <div class="balanceval" style="color:${balCol}">
             ${deficit ? '−' : '+'}${Math.abs(total).toLocaleString('sv-SE')} kcal
           </div>
         </div>
         <div style="text-align:right;">
           <div class="k">Snitt/dag</div>
-          <div class="v" style="color:${deficit?'var(--sage)':'var(--rust)'}">${avgDev > 0 ? '−' : '+'}${Math.abs(avgDev)}</div>
+          <div class="v" style="color:${balCol}">${avgDev > 0 ? '−' : '+'}${Math.abs(avgDev)}</div>
         </div>
       </div>
       ${balanceCurve(points, logged.length)}
@@ -3537,8 +3565,20 @@ function balanceBlock(results, goal, periodWord){
           ? `Du ligger ${Math.abs(total).toLocaleString('sv-SE')} kcal under ditt mål — alltså före planen.`
           : `Du ligger ${Math.abs(total).toLocaleString('sv-SE')} kcal över ditt mål — alltså efter planen.`}
         Räknas bara på de ${logged.length} dagar du loggat.
-        Förväntad fettförlust står längre ned.
       </div>
+      ${(() => {
+        // Att ligga över målet är inte samma sak som att gå upp i vikt —
+        // målet innehåller redan ett planerat underskott.
+        const sug = goalSuggestion();
+        if(!sug || deficit) return '';
+        const over = logged.filter(r => r.totals.net > sug.tdee).length;
+        const avgNet = Math.round(logged.reduce((a,r)=>a+r.totals.net,0)/logged.length);
+        if(!over)
+          return `<div class="cmp-note zonenote">Men alla ${logged.length} dagarna låg under din förbrukning på ${sug.tdee} kcal — du har gått ned i vikt varje dag, bara långsammare än planerat.</div>`;
+        if(over < logged.length)
+          return `<div class="cmp-note zonenote">${over} av ${logged.length} dagar låg över din förbrukning på ${sug.tdee} kcal. Övriga dagar gav fortfarande viktnedgång. I snitt ligger du på ${avgNet} kcal.</div>`;
+        return `<div class="cmp-note zonenote" style="color:var(--rust);">Samtliga dagar låg över din förbrukning på ${sug.tdee} kcal — här sker en viktuppgång, inte bara en långsammare nedgång.</div>`;
+      })()}
     </div>`;
 }
 
@@ -3671,11 +3711,14 @@ function macroTargets(){
 
 /* Statistik för en period. 7700 kcal ≈ 1 kg kroppsfett. */
 /* Grön under mål, gul upp till 10 % över, röd därefter. */
+/* Grön under målet, guld mellan mål och förbrukning (fortfarande nedgång,
+   bara långsammare än planerat), röd över förbrukningen (uppgång). */
 function avgNetColor(avg, goal){
   if(!goal || !avg) return 'var(--ink)';
   if(avg <= goal) return 'var(--sage)';
-  if(avg <= goal * 1.10) return 'var(--gold)';
-  return 'var(--rust)';
+  const sug = goalSuggestion();
+  const maint = sug ? sug.tdee : goal * 1.10;
+  return avg <= maint ? 'var(--gold)' : 'var(--rust)';
 }
 
 function periodStats(results, goal){
