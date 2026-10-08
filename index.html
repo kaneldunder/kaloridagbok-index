@@ -787,6 +787,11 @@
   .eewhen{display:flex; gap:8px; margin-bottom:8px;}
   .eewhen label{flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);}
   .eewhen input{border:1px solid var(--line); border-radius:8px; padding:7px 8px; font-size:14px; font-family:inherit; background:var(--field); color:var(--ink); width:100%; box-sizing:border-box; min-width:0;}
+  .labelseries{
+    width:100%; margin:0 0 10px; padding:12px; border-radius:12px; border:1.5px dashed var(--gold);
+    background:rgba(233,180,76,.08); color:var(--gold-ink); font-family:inherit; font-size:14px; font-weight:600; cursor:pointer;
+  }
+  .ing-amount.needamt{border-color:var(--gold) !important; box-shadow:0 0 0 2px rgba(233,180,76,.25);}
   body.hasqbar{padding-bottom:96px;}
   .qbar{
     position:fixed; left:0; right:0; bottom:0; z-index:20;
@@ -2361,7 +2366,7 @@ async function renderDay(content){
     state.mealType = null;
     state.editingFav = null;
     state.foodFormMode = 'quick';
-    state.mealBuilder = [emptyIngredient()];
+    state.mealBuilder = [emptyIngredient()]; state.buildName = null;
     await renderContent();
     const f = document.querySelector('#content .form');
     if(f) f.scrollIntoView({ behavior:'smooth', block:'start' });
@@ -2430,7 +2435,7 @@ async function renderDay(content){
     state.mealType = null;
     state.editingFav = null;
     state.foodFormMode = 'quick';
-    state.mealBuilder = [emptyIngredient()];
+    state.mealBuilder = [emptyIngredient()]; state.buildName = null;
     renderContent();
   };
   const addExBtn = document.getElementById('addExercise');
@@ -2964,6 +2969,7 @@ Svara ENDAST med JSON, ingen markdown:
     state.confirmDelFav = null;
     state.mealType = null;
     state.mealBuilder = [];
+    state.buildName = null;
     state.leftover = null;
     state.openForm = wasEditing ? 'favorites' : null;
     renderContent();
@@ -3018,7 +3024,7 @@ Svara ENDAST med JSON, ingen markdown:
   const modeBuild = document.getElementById('modeBuild');
   if(modeBuild) modeBuild.onclick = () => {
     state.foodFormMode = 'build';
-    if(!state.mealBuilder.length) state.mealBuilder = [emptyIngredient()];
+    if(!state.mealBuilder.length) state.mealBuilder = [emptyIngredient()]; state.buildName = null;
     renderContent();
   };
 
@@ -3090,7 +3096,7 @@ Svara ENDAST med JSON, ingen markdown:
     btn.onclick = () => {
       const idx = Number(btn.dataset.idx);
       state.mealBuilder.splice(idx, 1);
-      if(!state.mealBuilder.length) state.mealBuilder = [emptyIngredient()];
+      if(!state.mealBuilder.length) state.mealBuilder = [emptyIngredient()]; state.buildName = null;
       renderContent();
     };
   });
@@ -3117,6 +3123,33 @@ Svara ENDAST med JSON, ingen markdown:
   const quickEstBtn = document.getElementById('quickEstBtn');
   if(quickEstBtn) quickEstBtn.onclick = () => estimateQuickMeal();
 
+  const quickLabelBtn = document.getElementById('quickLabelBtn');
+  const quickLabelInput = document.getElementById('quickLabelInput');
+  if(quickLabelBtn && quickLabelInput){
+    quickLabelBtn.onclick = () => quickLabelInput.click();
+    quickLabelInput.onchange = async () => {
+      const files = Array.from(quickLabelInput.files || []);
+      quickLabelInput.value = '';
+      if(!files.length) return;
+      const typed = (document.getElementById('fName') || {}).value || '';
+      state.foodFormMode = 'build';
+      state.mealBuilder = [];
+      state.buildName = typed || null;
+      scanLabelSeries(files);
+    };
+  }
+  const bmn = document.getElementById('buildMealName');
+  if(bmn) bmn.addEventListener('input', () => { state.buildName = bmn.value; });
+  const buildLabelBtn = document.getElementById('buildLabelBtn');
+  const buildLabelInput = document.getElementById('buildLabelInput');
+  if(buildLabelBtn && buildLabelInput){
+    buildLabelBtn.onclick = () => buildLabelInput.click();
+    buildLabelInput.onchange = () => {
+      const files = Array.from(buildLabelInput.files || []);
+      buildLabelInput.value = '';
+      scanLabelSeries(files);
+    };
+  }
   const quickPhotoBtn = document.getElementById('quickPhotoBtn');
   const quickPhotoInput = document.getElementById('quickPhotoInput');
   if(quickPhotoBtn && quickPhotoInput){
@@ -3168,6 +3201,7 @@ Svara ENDAST med JSON, ingen markdown:
         const idx = Number(input.dataset.idx);
         const key = fieldMap[cls];
         state.mealBuilder[idx][key] = input.value;
+        if(key === 'amount'){ state.mealBuilder[idx].amountTouched = true; input.classList.toggle('needamt', input.value === '' && !!state.mealBuilder[idx].scanned); }
         if(key === 'amount' || key === 'name') state.mealBuilder[idx].note = null;
         if(key === 'name'){
           // Skriver man "40 g gurka" ska mängdfältet följa med direkt
@@ -3207,8 +3241,11 @@ Svara ENDAST med JSON, ingen markdown:
 
   const saveMealBtn = document.getElementById('saveMeal');
   if(saveMealBtn) saveMealBtn.onclick = async () => {
-    const components = state.mealBuilder.filter(r => r.name && r.name.trim());
-    if(!components.length) return;
+    const rows = state.mealBuilder.filter(r => r.name && r.name.trim());
+    if(!rows.length) return;
+    const missingAmt = rows.findIndex(r => r.scanned && (r.amount === '' || r.amount == null));
+    if(missingAmt >= 0){ focusNextEmptyAmount(); return; }
+    const components = rows.map(({ scanned, amountTouched, pending, note, ...c }) => ({ ...c, amount: Number(c.amount) || 0 }));
     const t = computeMealTotals();
     const nameInput = document.getElementById('buildMealName').value.trim();
     // Namn är valfritt: måltidstypen först, annars ingredienserna
@@ -3246,6 +3283,7 @@ Svara ENDAST med JSON, ingen markdown:
     state.mealType = null;
     state.openForm = null;
     state.mealBuilder = [];
+    state.buildName = null;
     renderContent();
   };
 
@@ -3584,6 +3622,8 @@ function quickFoodForm(){
       <button class="estbtn" id="quickEstBtn" style="flex:1;">✨ Uppskatta text</button>
       <button class="estbtn" id="quickPhotoBtn" style="flex:1;">📸 Fota maten</button>
     </div>
+    <button class="estbtn" id="quickLabelBtn" style="width:100%; margin-top:-2px;">🏷 Skanna etiketter — en rad per förpackning</button>
+    <input type="file" accept="image/*" multiple id="quickLabelInput" style="display:none">
     <input type="file" accept="image/*" capture="environment" id="quickPhotoInput" style="display:none">
     <div class="est-status" id="quickEstStatus"></div>
     ${quickPartsBlock()}
@@ -3829,7 +3869,7 @@ function quickPartsBlock(){
 function buildMealForm(){
   const t = computeMealTotals();
   return `
-        <div class="row"><input id="buildMealName" placeholder="Namn (valfritt — annars måltidstypen)" value="${state.editingFav !== null && state.favorites[state.editingFav] ? state.favorites[state.editingFav].name : ''}"></div>
+        <div class="row"><input id="buildMealName" placeholder="Namn (valfritt — annars måltidstypen)" value="${state.buildName != null ? escapeHtml(state.buildName) : (state.editingFav !== null && state.favorites[state.editingFav] ? escapeHtml(state.favorites[state.editingFav].name) : '')}"></div>
     <div class="mealtypes">
       <div class="mtrow">${MEAL_TYPES.slice(0,3).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
       <div class="mtrow">${MEAL_TYPES.slice(3,5).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}
@@ -3838,6 +3878,8 @@ function buildMealForm(){
 
     ${state.pickerOpen ? pantryPicker() : ''}
     ${state.mealBuilder.map((row,i)=>ingredientRow(row,i)).join('')}
+    ${state.pickerOpen ? '' : `<button class="labelseries" id="buildLabelBtn">📷 ${state.mealBuilder.some(r => r.scanned) ? 'Skanna nästa etikett' : 'Skanna etikett'}</button>
+    <input type="file" accept="image/*" multiple id="buildLabelInput" style="display:none">`}
     ${state.pickerOpen ? '' : `
       <div style="display:flex; gap:6px; margin-bottom:10px;">
         <button class="addingbtn" id="openPicker" style="flex:2; margin:0; border-style:solid; border-color:var(--sage); color:var(--sage);">📚 Från biblioteket${state.pantry.length ? ` (${state.pantry.length})` : ''}</button>
@@ -3887,12 +3929,12 @@ function ingredientRow(row, idx){
     <div class="est-status" id="estStatus_${idx}" ${row.note ? `style="color:${row.note.startsWith('✓')?'var(--sage)':'var(--muted)'}"` : ''}>${row.note || ''}</div>
     <div class="fieldgrid">
       <div><label>${isSt ? 'Antal (st)' : 'Mängd (g)'}</label>
-        <input class="ing-amount" data-idx="${idx}" type="number" step="${isSt?'0.5':'1'}" value="${row.amount}">
+        <input class="ing-amount ${row.scanned && (row.amount === '' || row.amount == null) ? 'needamt' : ''}" data-idx="${idx}" type="number" inputmode="decimal" step="${isSt?'0.5':'1'}" value="${row.amount}" placeholder="${row.scanned ? 'Hur mycket?' : ''}">
         ${isSt ? `<div class="amtchips">
           ${[0.5,1,2].map(f => {const a=Math.max(0.5,f); return `<button class="amtchip ${Number(row.amount)===a?'active':''}" data-idx="${idx}" data-amt="${a}">${f===0.5?'½':f}×</button>`;}).join('')}
         </div>` : row.portion ? `<div class="amtchips">
           ${[0.5,1,2].map(f => `<button class="amtchip ${Number(row.amount)===Math.round(row.portion*f*10)/10?'active':''}" data-idx="${idx}" data-amt="${Math.round(row.portion*f*10)/10}">${f===0.5?'½':f}×</button>`).join('')}
-        </div>` : ''}
+        </div>${row.scanned ? `<div style="font-size:10px;color:var(--muted);margin-top:3px;">1× = en portion à ${row.portion} g enligt förpackningen</div>` : ''}` : ''}
       </div>
       <div>
         <label>Kcal ${u}</label>
@@ -4030,7 +4072,7 @@ Svara ENDAST med JSON, ingen markdown:
   }
 }
 
-async function scanLabel(idx, file){
+async function scanLabel(idx, file, opts = {}){
   const row = state.mealBuilder[idx];
   if(!row) return;
   const btn = document.getElementById('scanBtn_' + idx);
@@ -4064,6 +4106,11 @@ async function scanLabel(idx, file){
     row.fatPer100 = conv.fatPer100;
     row.carbsPer100 = conv.carbsPer100;
     if(parsed.name && !row.name.trim()) row.name = String(parsed.name).trim();
+    row.scanned = true;
+    const sv = Number(parsed.styckvikt);
+    if(row.unit !== 'st' && sv > 0) row.portion = Math.round(sv);
+    // Etiketten säger inget om hur mycket du äter — lämna mängden tom tills du fyllt i den
+    if(!row.amountTouched && row.unit !== 'st') row.amount = '';
 
     const setVal = (cls, val) => {
       const el = document.querySelector(`.${cls}[data-idx="${idx}"]`);
@@ -4074,13 +4121,41 @@ async function scanLabel(idx, file){
     setVal('ing-protein', row.proteinPer100);
     setVal('ing-fat', row.fatPer100);
     setVal('ing-carbs', row.carbsPer100);
-    updateMealTotalsDOM();
+    if(opts.rerender !== false){
+      await renderContent();
+      focusNextEmptyAmount();
+    }
   } catch(e){
     console.error('Label scan failed', e);
     if(statusEl) statusEl.textContent = 'Fel: ' + (e && e.message ? e.message : 'okänt fel') + '. Prova igen eller fyll i manuellt.';
   } finally {
     if(btn){ btn.disabled = false; btn.textContent = original || '📷 Skanna etikett'; }
   }
+}
+
+function focusNextEmptyAmount(){
+  const el = document.querySelector('#content .ing-amount.needamt');
+  if(el){ el.scrollIntoView({ behavior:'smooth', block:'center' }); setTimeout(() => el.focus(), 250); }
+}
+/* En rad per bild. Tom första rad återanvänds; bilderna läses en i taget. */
+async function scanLabelSeries(files){
+  if(!files || !files.length) return;
+  const list = Array.from(files);
+  const idxs = list.map(() => {
+    const blank = state.mealBuilder.findIndex(r => !r.name.trim() && !Number(r.kcalPer100) && !r.scanned && !r.pending);
+    if(blank >= 0){ state.mealBuilder[blank].pending = true; state.mealBuilder[blank].amount = ''; return blank; }
+    state.mealBuilder.push({ ...emptyIngredient(), amount:'', pending:true });
+    return state.mealBuilder.length - 1;
+  });
+  await renderContent();
+  for(let i = 0; i < list.length; i++){
+    const st = document.getElementById('estStatus_' + idxs[i]);
+    if(st){ st.style.color = 'var(--muted)'; st.textContent = `Läser etikett ${i+1} av ${list.length}…`; }
+    await scanLabel(idxs[i], list[i], { rerender:false });
+    state.mealBuilder[idxs[i]].pending = false;
+  }
+  await renderContent();
+  focusNextEmptyAmount();
 }
 
 /* Fast inmatningsrad för aktiva kalorier (baslinjeläge).
