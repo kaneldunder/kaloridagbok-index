@@ -770,6 +770,20 @@
   .be-goal{background:var(--gold);}
   .be-mark{background:var(--ink);}
   .be-sub{display:flex; justify-content:space-between; font-size:11px; color:var(--muted);}
+  .eatagain{
+    border:1px solid var(--line); background:transparent; color:var(--sage); font-family:inherit;
+    font-size:12px; font-weight:600; padding:5px 10px; border-radius:999px; cursor:pointer; white-space:nowrap; margin-top:7px;
+  }
+  .eatagain:hover{border-color:var(--sage);}
+  .lohead{margin-bottom:10px;}
+  .lohead b{display:block; font-size:15px;}
+  .lohead small{font-size:12px; color:var(--muted);}
+  .compedit .loamt{
+    flex:0 0 66px; width:66px; min-width:0; box-sizing:border-box;
+    border:1px solid var(--line); border-radius:7px; padding:5px 7px;
+    font-size:13.5px; font-family:inherit; text-align:right; background:var(--field); color:var(--ink);
+  }
+  .loamt::placeholder{color:var(--muted); opacity:.55;}
   body.hasqbar{padding-bottom:96px;}
   .qbar{
     position:fixed; left:0; right:0; bottom:0; z-index:20;
@@ -1685,6 +1699,70 @@ function recentLoggedDays(limit){
 }
 function copyDayAvailable(){ return recentLoggedDays(1).length > 0; }
 
+/* ---- Ät igen: lägg till en tidigare måltid idag och fyll i mängderna själv ---- */
+function leftoverTotals(lo){
+  const t = { kcal:0, protein:0, fat:0, carbs:0 };
+  if(lo.comps){
+    lo.comps.forEach(c => { const m = componentMacros(c); t.kcal += m.kcal; t.protein += m.protein; t.fat += m.fat; t.carbs += m.carbs; });
+  } else {
+    const f = Number(lo.portion) || 0;
+    t.kcal = lo.whole.kcal * f; t.protein = lo.whole.protein * f; t.fat = lo.whole.fat * f; t.carbs = lo.whole.carbs * f;
+  }
+  return t;
+}
+function leftoverForm(){
+  const lo = state.leftover;
+  if(!lo) return '';
+  const wd = ['söndag','måndag','tisdag','onsdag','torsdag','fredag','lördag'];
+  const mn = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
+  const from = new Date(lo.fromKey + 'T12:00:00');
+  const t = leftoverTotals(lo);
+  const body = lo.comps ? `<div class="compedit">
+      <div class="complbl">Hur mycket äter du?</div>
+      ${lo.comps.map((c,i) => {
+        const isSt = c.unit === 'st';
+        return `<div class="comprow">
+          <span class="compname">${escapeHtml(c.name)}${c.gramPerStyck ? ` <small class="qpgps">à ${c.gramPerStyck} g</small>` : ''}</span>
+          <input class="loamt" data-ci="${i}" type="number" step="${isSt?'0.5':'10'}" inputmode="decimal"
+            value="${c.amount === '' ? '' : c.amount}" placeholder="${Number(c.prevAmount)||0}">
+          <span class="compunit">${isSt?'st':'g'}</span>
+          <span class="compkcal" id="loKcal_${i}">${c.amount === '' ? '–' : Math.round(componentMacros(c).kcal) + ' kcal'}</span>
+        </div>`;
+      }).join('')}
+      <div class="cmp-note" style="margin-top:6px;">Grå siffra = vad du åt ${wd[from.getDay()]}. Lämna tomt för det du inte äter.</div>
+    </div>`
+    : `<div class="compedit">
+      <div class="complbl">Portion jämfört med ${wd[from.getDay()]}</div>
+      <div class="scalerow" style="margin:6px 0 0;">
+        ${[0.5,0.75,1,1.5,2].map(f => `<button class="scalebtn loportion ${Number(lo.portion)===f?'active':''}" data-f="${f}">${f===0.5?'½':f===0.75?'¾':f===1.5?'1½':f}×</button>`).join('')}
+      </div>
+      <div class="cmp-note" style="margin-top:6px;">Måltiden sparades utan delar, så den skalas som helhet (${lo.whole.kcal} kcal i går).</div>
+    </div>`;
+  return `<div class="form">
+    <div class="lohead"><b>Ät igen: ${escapeHtml(lo.name)}</b>
+      <small>Från ${wd[from.getDay()]} ${from.getDate()} ${mn[from.getMonth()]}</small></div>
+    ${body}
+    <div class="mealtotals">
+      <div class="tot"><span>Totalt</span><b id="loTotKcal">${Math.round(t.kcal)}</b></div>
+      <div class="tot"><span>Protein</span><b id="loTotP">${Math.round(t.protein)}g</b></div>
+      <div class="tot"><span>Fett</span><b id="loTotF">${Math.round(t.fat)}g</b></div>
+      <div class="tot"><span>Kolh.</span><b id="loTotC">${Math.round(t.carbs)}g</b></div>
+    </div>
+    <div class="mealtypes">
+      <div class="mtrow">${MEAL_TYPES.slice(0,3).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
+      <div class="mtrow">${MEAL_TYPES.slice(3).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px; margin:4px 0 10px;">
+      <label style="font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); flex-shrink:0;">Tid</label>
+      <input type="time" id="loTime" value="${nowHM()}" style="border:1px solid var(--line); border-radius:8px; padding:6px 8px; font-size:14px; font-family:inherit; flex:1;">
+    </div>
+    <div class="actions">
+      <button class="cancel" id="cancelForm">Avbryt</button>
+      <button class="save" id="saveLeftover" ${t.kcal > 0 ? '' : 'disabled'}>Spara</button>
+    </div>
+  </div>`;
+}
+
 function copyDayPanel(){
   const days = recentLoggedDays(6);
   const wd = ['Söndag','Måndag','Tisdag','Onsdag','Torsdag','Fredag','Lördag'];
@@ -2149,6 +2227,7 @@ async function renderDay(content){
     </div>
     ${state.selectedEntries.size>0 ? bulkBar() : ''}
     ${state.openForm === 'food' ? foodForm()
+      : state.openForm === 'leftover' ? leftoverForm()
       : state.openForm === 'favorites' ? favoritesPanel()
       : state.openForm === 'copyDay' ? copyDayPanel() : ''}
     ${data.food.length ? data.food.map((f,i)=>
@@ -2186,6 +2265,77 @@ async function renderDay(content){
   if(wkLbl) wkLbl.innerHTML = weekLabelHTML(state.currentDate);
   const mealToggle = document.getElementById('mealToggle');
   if(mealToggle) mealToggle.onclick = () => { state.mealsOpen = !mealsExpanded; renderContent(); };
+  content.querySelectorAll('.eatagain').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const src = data.food[Number(btn.dataset.idx)];
+      if(!src) return;
+      state.leftover = {
+        name: src.name, fromKey: dateStr,
+        comps: (src.components && src.components.length)
+          ? src.components.map(c => ({ ...c, prevAmount: c.amount, amount: '' })) : null,
+        whole: { kcal: Number(src.kcal)||0, protein: Number(src.protein)||0, fat: Number(src.fat)||0, carbs: Number(src.carbs)||0 },
+        portion: 1
+      };
+      state.mealType = src.mealType || detectMealType(src.name) || null;
+      state.currentDate = new Date();
+      state.openForm = 'leftover';
+      state.mealsOpen = true;
+      state.editingEntry = null; state.editingTime = null;
+      render();
+      setTimeout(() => { const f = document.querySelector('#content .form'); if(f) f.scrollIntoView({ behavior:'smooth', block:'start' }); }, 50);
+    };
+  });
+  if(state.openForm === 'leftover' && state.leftover){
+    const lo = state.leftover;
+    const paintLo = () => {
+      const t = leftoverTotals(lo);
+      const set = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
+      set('loTotKcal', Math.round(t.kcal)); set('loTotP', Math.round(t.protein) + 'g');
+      set('loTotF', Math.round(t.fat) + 'g'); set('loTotC', Math.round(t.carbs) + 'g');
+      const sv = document.getElementById('saveLeftover'); if(sv) sv.disabled = !(t.kcal > 0);
+    };
+    content.querySelectorAll('.loamt').forEach(inp => {
+      inp.oninput = () => {
+        const i = Number(inp.dataset.ci);
+        lo.comps[i].amount = inp.value === '' ? '' : (Number(inp.value.replace(',','.')) || 0);
+        const k = document.getElementById('loKcal_' + i);
+        if(k) k.textContent = lo.comps[i].amount === '' ? '–' : Math.round(componentMacros(lo.comps[i]).kcal) + ' kcal';
+        paintLo();
+      };
+    });
+    content.querySelectorAll('.loportion').forEach(b => {
+      b.onclick = () => {
+        lo.portion = Number(b.dataset.f);
+        content.querySelectorAll('.loportion').forEach(x => x.classList.toggle('active', x === b));
+        paintLo();
+      };
+    });
+    const saveLo = document.getElementById('saveLeftover');
+    if(saveLo) saveLo.onclick = async () => {
+      const t = leftoverTotals(lo);
+      if(!(t.kcal > 0)) return;
+      const entry = {
+        name: lo.name,
+        kcal: Math.round(t.kcal),
+        protein: Math.round(t.protein*10)/10,
+        fat: Math.round(t.fat*10)/10,
+        carbs: Math.round(t.carbs*10)/10,
+        time: (document.getElementById('loTime') || {}).value || nowHM()
+      };
+      if(state.mealType) entry.mealType = state.mealType;
+      if(lo.comps){
+        entry.components = lo.comps.filter(c => c.amount !== '' && Number(c.amount) > 0)
+          .map(({ prevAmount, ...c }) => ({ ...c, amount: Number(c.amount) }));
+      }
+      data.food.push(entry);
+      sortByTime(data.food);
+      saveLo.disabled = true; saveLo.textContent = 'Sparar…';
+      await saveDay(dateStr, data);
+      state.openForm = null; state.leftover = null; state.mealType = null;
+      renderContent();
+    };
+  }
   const missOpen = document.getElementById('missOpen');
   if(missOpen) missOpen.onclick = () => { state.mealsOpen = true; renderContent(); };
 
@@ -2785,6 +2935,7 @@ Svara ENDAST med JSON, ingen markdown:
     state.confirmDelFav = null;
     state.mealType = null;
     state.mealBuilder = [];
+    state.leftover = null;
     state.openForm = wasEditing ? 'favorites' : null;
     renderContent();
   };
@@ -3275,6 +3426,7 @@ function entryRow(item, idx, type){
     <div style="flex:1; min-width:0;">
       <div class="ename">${item.name}</div>
       <div class="esub">${time}${subText ? ` · ${subText}` : ''}</div>
+      ${type === 'food' && ymd(state.currentDate) !== todayYmd() && state.selectedEntries.size === 0 ? `<button class="eatagain" data-idx="${idx}" title="Lägg till idag och fyll i mängderna">↻ Ät igen idag</button>` : ''}
     </div>
     <div class="right">
       <div class="kcal">${type==='exercise'?'−':''}${item.kcal}</div>
