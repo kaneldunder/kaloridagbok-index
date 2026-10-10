@@ -138,7 +138,7 @@
     width:15px; height:15px; border-radius:5px; flex-shrink:0; font-size:9.5px;
     font-weight:700; display:flex; align-items:center; justify-content:center;
   }
-  .qpsrc.lib{background:var(--sage-light); color:var(--sage);}
+  .qpsrc.lib, .qpsrc.label{background:var(--sage-light); color:var(--sage);}
   .qpsrc.ai{background:var(--gold-light); color:var(--gold-ink);}
   .qpname{flex:1 1 auto; min-width:0; font-size:13px; color:var(--ink);
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
@@ -175,13 +175,26 @@
   .scalebtn.active{background:var(--sage); color:var(--on-accent); border-color:var(--sage);}
   .scalebtn.plus{border-color:var(--gold); color:var(--gold-ink);}
 
+  .btnpair{display:flex; gap:8px;}
+  .btnpair .splitbtn{flex:1;}
+  .aehead{display:flex; align-items:center; justify-content:space-between; margin-bottom:8px;}
+  .aeunits{display:inline-flex; border:1px solid var(--line); border-radius:7px; overflow:hidden;}
+  .aeunit{border:none; background:transparent; color:var(--muted); font:inherit; font-size:12px; padding:3px 11px; cursor:pointer;}
+  .aeunit.on{background:var(--sage); color:var(--on-accent); font-weight:700;}
+  .aerow{display:flex; align-items:center; gap:8px; margin-bottom:6px;}
+  .aerow label{flex:1; font-size:13px; color:var(--ink);}
+  .amtedit .aeinput{flex:0 0 84px; width:84px; box-sizing:border-box; border:1px solid var(--line); border-radius:7px;
+    padding:6px 8px; font-size:15px; font-family:inherit; text-align:right; background:var(--field); color:var(--ink);}
+  .amtedit .compunit{width:16px; font-size:12px; color:var(--muted);}
+  .aeres{border-top:1px solid var(--line); margin-top:4px; padding-top:7px; font-size:12.5px; color:var(--muted); text-align:right;}
+  .aeres b{color:var(--ink); font-size:14px;}
   .compedit{
     background:var(--paper); border:1px solid var(--line); border-radius:10px;
     padding:9px 11px; margin-bottom:9px;
   }
   .complbl{font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:6px;}
   .comprow{display:flex; align-items:center; gap:7px; margin-bottom:5px;}
-  .compname{flex:1 1 auto; min-width:0; font-size:13px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .compname{flex:1 1 0; width:0; min-width:0; font-size:13px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .compedit .compamt{
     flex:0 0 66px; width:66px; min-width:0; box-sizing:border-box;
     border:1px solid var(--line); border-radius:7px; padding:5px 7px;
@@ -1999,9 +2012,38 @@ function componentMacros(c){
   };
 }
 
+/* Ändra mängd på en post utan delar: ange hur mycket det var och hur mycket det blev,
+   så skalas kcal och makron. Posten sparas sedan som en del med känd mängd. */
+function guessLoggedAmount(name){
+  const m = String(name || '').match(/(\d+(?:[.,]\d+)?)\s*(g|gram|st|styck)\b/i);
+  if(!m) return null;
+  return { amount: Number(m[1].replace(',', '.')), unit: /^st/i.test(m[2]) ? 'st' : 'g' };
+}
+function amountEditHTML(item){
+  const a = state.amountEdit;
+  const u = a.unit;
+  const field = (id, v, ph) => `<input id="${id}" class="aeinput" type="number" inputmode="decimal" step="${u==='st'?'0.5':'1'}" value="${v === '' || v == null ? '' : v}" placeholder="${ph}">`;
+  return `<div class="compedit amtedit">
+    <div class="aehead"><span class="complbl" style="margin:0;">Ändra mängd</span>
+      <span class="aeunits">${['g','st'].map(x => `<button type="button" class="aeunit ${u===x?'on':''}" data-unit="${x}">${x}</button>`).join('')}</span></div>
+    <div class="aerow"><label for="aeOld">Loggat</label>${field('aeOld', a.old, u==='st'?'antal':'gram')}<span class="compunit">${u}</span></div>
+    <div class="aerow"><label for="aeNew">Ny mängd</label>${field('aeNew', a.next, u==='st'?'antal':'gram')}<span class="compunit">${u}</span></div>
+    <div class="aeres" id="aeRes">${amountEditResult(item)}</div>
+  </div>`;
+}
+function amountEditFactor(){
+  const a = state.amountEdit; if(!a) return null;
+  const o = Number(a.old), n = Number(a.next);
+  return (o > 0 && n > 0) ? n / o : null;
+}
+function amountEditResult(item){
+  const f = amountEditFactor();
+  if(!f) return state.amountEdit.old ? 'Fyll i den nya mängden' : 'Fyll i hur mycket du loggade först';
+  return `${Math.round(item.kcal||0)} kcal → <b>${Math.round((item.kcal||0) * f)} kcal</b>`;
+}
 function entryEditRow(item, idx, type){
   return `<div class="entry ${type} editrow" style="flex-wrap:wrap; gap:8px; align-items:flex-start;">
-    <div style="flex:1; min-width:200px;">
+    <div style="flex:1 1 200px; min-width:0; max-width:100%;">
       <div class="sub" style="margin-bottom:6px;">${type==='food'?'Redigera måltid':'Redigera träning'}</div>
       <input id="eeName" placeholder="Namn" value="${(item.name||'').replace(/"/g,'&quot;')}"
         style="width:100%; border:1px solid var(--line); border-radius:8px; padding:8px 9px; font-size:14px; font-family:inherit; margin-bottom:6px;">
@@ -2017,7 +2059,10 @@ function entryEditRow(item, idx, type){
       ${type === 'food' ? `<button class="splitbtn" id="reEstimate">✨ Räkna om från texten</button>` : ''}
       ${type === 'food' && (state.editingComps || (item.components && item.components.length))
         ? componentEditor(item)
-        : type === 'food' ? `<button class="splitbtn" id="splitEntry">⁂ Dela upp i ingredienser</button>` : ''}
+        : type === 'food' ? (state.amountEdit ? amountEditHTML(item) : `<div class="btnpair">
+            <button class="splitbtn" id="changeAmount">⚖ Ändra mängd</button>
+            <button class="splitbtn" id="splitEntry">⁂ Dela upp i delar</button>
+          </div>`) : ''}
       ${type === 'food' ? `<div class="est-status" id="splitStatus"></div>` : ''}
       <div class="fieldgrid">
         <div><label>Kcal</label><input id="eeKcal" type="number" value="${item.kcal||0}"
@@ -2687,6 +2732,7 @@ async function renderDay(content){
       const it = data[t] && data[t][i];
       state.editingComps = (it && it.components) ? it.components.map(c => ({...c})) : null;
       state.splitNote = null;
+      state.amountEdit = null;
       renderContent();
     };
   });
@@ -2786,6 +2832,42 @@ async function renderDay(content){
     };
   });
 
+  const caBtn = document.getElementById('changeAmount');
+  if(caBtn) caBtn.onclick = async () => {
+    const it = state.editingEntry ? (data[state.editingEntry.type]||[])[state.editingEntry.idx] : null;
+    if(!it) return;
+    const g = guessLoggedAmount(it.name);
+    state.amountEdit = { old: g ? g.amount : '', next: '', unit: g ? g.unit : 'g' };
+    const keep = ['eeName','eeTime','eeDate'].map(id => [id, (document.getElementById(id)||{}).value]);
+    const keptMt = (document.querySelector('.entry.editrow .mtbtn.active')||{}).dataset;
+    await renderContent();
+    keep.forEach(([id,v]) => { const e = document.getElementById(id); if(e && v != null) e.value = v; });
+    if(keptMt && keptMt.mt) document.querySelectorAll('.entry.editrow .mtbtn').forEach(b => b.classList.toggle('active', b.dataset.mt === keptMt.mt));
+    const first = document.getElementById(state.amountEdit.old ? 'aeNew' : 'aeOld'); if(first) first.focus();
+  };
+  if(state.amountEdit){
+    const it = state.editingEntry ? (data[state.editingEntry.type]||[])[state.editingEntry.idx] : null;
+    const paintAe = () => {
+      if(!it) return;
+      const f = amountEditFactor();
+      const r = document.getElementById('aeRes'); if(r) r.innerHTML = amountEditResult(it);
+      if(!f) return;
+      const set = (id, v, dec) => { const e = document.getElementById(id); if(e) e.value = dec ? Math.round(v*10)/10 : Math.round(v); };
+      set('eeKcal', (it.kcal||0) * f);
+      set('eeProtein', (it.protein||0) * f, 1);
+      set('eeFat', (it.fat||0) * f, 1);
+      set('eeCarbs', (it.carbs||0) * f, 1);
+    };
+    const o = document.getElementById('aeOld'), n = document.getElementById('aeNew');
+    if(o) o.oninput = () => { state.amountEdit.old = o.value; paintAe(); };
+    if(n) n.oninput = () => { state.amountEdit.next = n.value; paintAe(); };
+    content.querySelectorAll('.aeunit').forEach(b => b.onclick = () => {
+      state.amountEdit.unit = b.dataset.unit;
+      content.querySelectorAll('.aeunit').forEach(x => x.classList.toggle('on', x === b));
+      content.querySelectorAll('.amtedit .compunit').forEach(x => x.textContent = b.dataset.unit);
+    });
+  }
+
   const splitBtn = document.getElementById('splitEntry');
   if(splitBtn) splitBtn.onclick = async () => {
     const it = state.editingEntry ? (data[state.editingEntry.type]||[])[state.editingEntry.idx] : null;
@@ -2873,7 +2955,7 @@ Svara ENDAST med JSON, ingen markdown:
   };
 
   const cancelEntry = document.getElementById('cancelEntry');
-  if(cancelEntry) cancelEntry.onclick = () => { state.editingEntry = null; state.editingComps = null; state.splitNote = null; renderContent(); };
+  if(cancelEntry) cancelEntry.onclick = () => { state.editingEntry = null; state.editingComps = null; state.splitNote = null; state.amountEdit = null; renderContent(); };
 
   const saveEntry = document.getElementById('saveEntry');
   if(saveEntry) saveEntry.onclick = async () => {
@@ -2891,6 +2973,28 @@ Svara ENDAST med JSON, ingen markdown:
       item.fat     = Number(g('eeFat'))     || 0;
       item.carbs   = Number(g('eeCarbs'))   || 0;
       if(state.editingComps) item.components = state.editingComps.map(c => ({...c}));
+      else if(state.amountEdit && amountEditFactor()){
+        // Spara som en del med känd mängd — nästa gång räcker det att ändra siffran
+        const a = state.amountEdit, n = Number(a.next);
+        // Står den gamla mängden i namnet, byt till den nya ("chips 50 g" → "chips 35 g")
+        const re = /(\d+(?:[.,]\d+)?)(\s*)(g|gram|st|styck)\b/i;
+        const gm = name.match(re);
+        if(gm && Number(gm[1].replace(',', '.')) === Number(a.old)){
+          item.name = name.replace(re, `${String(n).replace('.', ',')}$2$3`);
+        }
+        const compName = (item.name.replace(re, '').replace(/\s{2,}/g, ' ').replace(/[\s,–-]+$/, '').trim()) || item.name;
+        const per = v => { const x = (Number(v)||0) / (a.unit === 'st' ? n : n / 100); return Math.round(x * 10) / 10; };
+        item.components = [{ name: compName, unit: a.unit, amount: n,
+          kcalPer100: per(item.kcal), proteinPer100: per(item.protein),
+          fatPer100: per(item.fat), carbsPer100: per(item.carbs), src: 'manual' }];
+      }
+      // En enda del med mängden i namnet: håll namnet i takt med mängden
+      if(item.components && item.components.length === 1){
+        const c = item.components[0];
+        const re1 = /(\d+(?:[.,]\d+)?)(\s*)(g|gram|st|styck)\b/i, gm1 = item.name.match(re1);
+        if(gm1 && (/^st/i.test(gm1[3]) ? 'st' : 'g') === c.unit)
+          item.name = item.name.replace(re1, `${String(Number(c.amount)||0).replace('.', ',')}$2$3`);
+      }
       const activeMt = document.querySelector('.entry.editrow .mtbtn.active');
       if(activeMt) item.mealType = activeMt.dataset.mt;
       else if(!item.mealType) item.mealType = detectMealType(item.name) || null;
@@ -2901,6 +3005,7 @@ Svara ENDAST med JSON, ingen markdown:
     state.editingEntry = null;
     state.editingComps = null;
     state.splitNote = null;
+    state.amountEdit = null;
     if(newDate && /^\d{4}-\d{2}-\d{2}$/.test(newDate) && newDate !== dateStr){
       // Flytta posten till en annan dag
       data[type].splice(i, 1);
@@ -3743,7 +3848,8 @@ async function estimateMealPhoto(file){
         role: "user",
         content: [
           { type: "image", source: { type: "base64", media_type: file.type || 'image/jpeg', data: base64 } },
-          { type: "text", text: `Du är en näringsexpert. Identifiera maten på tallriken och uppskatta portionsstorlekar utifrån vad som syns (använd tallrik, bestick eller glas som storleksreferens om möjligt). Var realistisk om tillagning: anta att synligt fett, olja eller smör i stekt mat räknas med. Svara ENDAST med ett JSON-objekt, ingen markdown, inga kodstaket. Format exakt: {"namn": "kort beskrivning av måltiden", "kcal": number, "protein": number, "fat": number, "carbs": number, "delar": "vad du identifierat och vilka mängder du antagit", "osakerhet": "lag" | "medel" | "hog"}` }
+          { type: "text", text: `Du är en näringsexpert. Identifiera maten på tallriken och uppskatta portionsstorlekar utifrån vad som syns (använd tallrik, bestick eller glas som storleksreferens om möjligt). Var realistisk om tillagning: anta att synligt fett, olja eller smör i stekt mat räknas med. Visar bilden en förpackning eller en näringsdeklaration: sätt etikett=true, läs av värdena per 100 g (kcalPer100g, proteinPer100g, fatPer100g, carbsPer100g), sätt gram = förpackningens nettovikt (eller en angiven portion om nettovikten inte syns), och kcal/protein/fat/carbs = för den mängden. Annars etikett=false och gram = uppskattad totalvikt om du kan bedöma den, annars null.
+Svara ENDAST med ett JSON-objekt, ingen markdown, inga kodstaket. Format exakt: {"namn": "kort beskrivning av måltiden", "kcal": number, "protein": number, "fat": number, "carbs": number, "delar": "vad du identifierat och vilka mängder du antagit", "osakerhet": "lag" | "medel" | "hog", "etikett": boolean, "gram": number|null, "kcalPer100g": number|null, "proteinPer100g": number|null, "fatPer100g": number|null, "carbsPer100g": number|null}` }
         ]
       }]
     });
@@ -3760,6 +3866,21 @@ async function estimateMealPhoto(file){
     setVal('fProtein', Math.round((Number(p.protein) || 0) * 10) / 10);
     setVal('fFat', Math.round((Number(p.fat) || 0) * 10) / 10);
     setVal('fCarbs', Math.round((Number(p.carbs) || 0) * 10) / 10);
+
+    // Etikett: lägg in som en del med mängd, så att man kan ändra grammen direkt
+    const lg = Number(p.gram), lk = Number(p.kcalPer100g);
+    if(p.etikett && lg > 0 && lk > 0){
+      const nm = (nameEl && nameEl.value.trim()) || p.namn || 'Förpackning';
+      state.quickParts = [{ name: p.namn || nm, unit: 'g', amount: Math.round(lg),
+        kcalPer100: Math.round(lk), proteinPer100: Math.round((Number(p.proteinPer100g)||0)*10)/10,
+        fatPer100: Math.round((Number(p.fatPer100g)||0)*10)/10, carbsPer100: Math.round((Number(p.carbsPer100g)||0)*10)/10,
+        src: 'label' }];
+      state.quickNote = `Från etiketten · ${Math.round(lk)} kcal/100 g · ändra grammen om du åt mer eller mindre`;
+      if(statusEl) statusEl.textContent = '';
+      paintQuickParts();
+      syncQuickTotals();
+      return;
+    }
 
     if(statusEl){
       const unc = { lag:'låg', medel:'medel', hog:'hög' }[p.osakerhet] || 'medel';
@@ -3940,7 +4061,7 @@ function quickPartsBlock(){
       <button type="button" class="qpclear" id="clearQuickParts">Rensa</button>
     </div>
     ${parts.map((c,i) => `<div class="qprow">
-      <span class="qpsrc ${c.src}" title="${c.src==='lib'?'Från ditt bibliotek':'Uppskattat av AI'}">${c.src==='lib'?'✓':'~'}</span>
+      <span class="qpsrc ${c.src}" title="${c.src==='lib'?'Från ditt bibliotek':c.src==='label'?'Från etiketten':'Uppskattat av AI'}">${c.src==='lib'||c.src==='label'?'✓':'~'}</span>
       <span class="qpname">${c.name}${c.gramPerStyck ? ` <small class="qpgps">à ${c.gramPerStyck} g</small>` : ''}</span>
       <input class="qpamt" data-qi="${i}" type="number" step="${c.unit==='st'?'0.5':'10'}"
         value="${Number(c.amount)||0}" inputmode="decimal">
@@ -4098,7 +4219,10 @@ const AI_SCHEMAS = {
   ingredient: { type:'object', properties:{ namn:AI_S, gram:AI_N, styckAntal:AI_NN, styckvikt:AI_NN, ...AI_PER100, antagande:AI_S },
     required:['namn','gram', ...AI_PER100_REQ] },
   photo: { type:'object', properties:{ namn:AI_S, kcal:AI_N, protein:AI_N, fat:AI_N, carbs:AI_N, delar:AI_S,
-    osakerhet:{ type:'string', enum:['lag','medel','hog'] } }, required:['namn','kcal','protein','fat','carbs'] },
+    osakerhet:{ type:'string', enum:['lag','medel','hog'] },
+    etikett:{ type:'boolean' }, gram:AI_NN,
+    kcalPer100g:AI_NN, proteinPer100g:AI_NN, fatPer100g:AI_NN, carbsPer100g:AI_NN },
+    required:['namn','kcal','protein','fat','carbs'] },
   label: { type:'object', properties:{ name:AI_S, styckvikt:AI_NN, ...AI_PER100 }, required:['name', ...AI_PER100_REQ] },
   per100: { type:'object', properties:{ styckvikt:AI_NN, ...AI_PER100 }, required: AI_PER100_REQ },
   label100: { type:'object', properties:{ name:AI_S, kcalPer100:AI_N, proteinPer100:AI_N, fatPer100:AI_N, carbsPer100:AI_N },
