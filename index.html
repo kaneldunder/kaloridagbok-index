@@ -57,6 +57,15 @@
   .daynav:hover{background:var(--line); color:var(--ink);}
   .hdr-right{display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0;}
   .hdr-actions{display:flex; gap:4px; flex-shrink:0;}
+  .clday{display:flex; gap:12px; padding:8px 0; border-top:1px solid var(--line);}
+  .clday:first-child{border-top:none; padding-top:0;}
+  .cldate{width:50px; flex-shrink:0; white-space:nowrap; font-size:12.5px; font-weight:600; color:var(--gold-ink); padding-top:1px;}
+  .cllist{margin:0; padding:0 0 0 16px; font-size:13.5px; line-height:1.45; color:var(--ink);}
+  .cllist li{margin:0 0 3px;}
+  .clolder summary{cursor:pointer; font-size:13px; color:var(--muted); padding:8px 0 4px; border-top:1px solid var(--line);}
+  .clolder .clday:first-child{border-top:none;}
+  .clver{font-size:12px; color:var(--muted); margin-top:10px;}
+  button.appver{border:none; background:transparent; font-family:inherit; cursor:pointer;}
   .appver{font-size:10px; color:var(--muted); opacity:.7; letter-spacing:.02em; padding-right:8px; margin-top:-2px; white-space:nowrap;}
   .iconbtn{
     border:none; background:transparent; color:var(--muted);
@@ -840,6 +849,43 @@ function versionLabel(){
   const mon = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'][m-1];
   return `v. ${dd} ${mon} ${t.replace(':','.')}`;
 }
+/* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
+const CHANGELOG = [
+  ['2026-10-10', [
+    'Sammanlagd vikt visas när du matar in mängd per del',
+    'Versionen syns i sidhuvudet, och den här listan',
+    'Stabilare AI-svar — färre JSON-fel vid uppskattning och skanning'
+  ]],
+  ['2026-10-08', [
+    'Skanna etiketter: ingen 100 g-gissning, och en serie bilder ger en rad per förpackning',
+    'Ändra tid och datum när du redigerar en måltid',
+    '↻ Ät igen idag — lägg till en tidigare måltid och fyll i mängderna själv'
+  ]],
+  ['2026-10-04', [
+    'Breakeven-rad i dagsvyn: förbrukning + aktivt, och hur långt under eller över du är'
+  ]],
+  ['2026-10-03', [
+    'Ny design: mörkgrönt tema med tallriken som dagsvy och veckoremsa',
+    'Ny vy: Statistik',
+    'Dagens måltider fälls ihop till en rad',
+    'Trendvikt och uppmätt förbrukning i Inställningar',
+    'Säkrare synk när två enheter sparar samtidigt',
+    'Rättad kaloriberäkning för styckvaror'
+  ]],
+  ['2026-09-29', [
+    'Första versionen på GitHub'
+  ]]
+];
+function changelogHTML(){
+  const mon = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'];
+  const fmt = d => { const [y,m,dd] = d.split('-').map(Number); return `${dd} ${mon[m-1]}`; };
+  const block = ([d, items]) => `<div class="clday"><div class="cldate">${fmt(d)}</div>
+      <ul class="cllist">${items.map(t => `<li>${escapeHtml(t)}</li>`).join('')}</ul></div>`;
+  const recent = CHANGELOG.slice(0, 3), older = CHANGELOG.slice(3);
+  return `${recent.map(block).join('')}
+    ${older.length ? `<details class="clolder"><summary>Äldre</summary>${older.map(block).join('')}</details>` : ''}
+    <div class="clver">Du kör ${versionLabel().replace('v. ', 'versionen från ')}</div>`;
+}
 let state = {
   settings: { dailyGoal: 2200, startWeight: 100, targetWeight: 90,
               height: null, age: null, sex: 'man', activity: 1.3, deficit: 500, goalSetAtWeight: null },
@@ -1567,7 +1613,7 @@ function render(){
         <button class="iconbtn" id="refreshAll" title="Hämta senaste data">⟳</button>
         <button class="iconbtn ${state.view==='settings'?'on':''}" id="openSettings" title="Inställningar">⚙</button>
       </div>
-      <div class="appver" title="Version ${APP_VERSION}">${versionLabel()}</div>
+      <button class="appver" id="appVer" title="Vad är nytt?">${versionLabel()}</button>
       </div>
     </header>
     ${isDay && state.viewMenu ? `<nav class="viewmenu">${viewBtns}</nav>` : ''}
@@ -1578,6 +1624,12 @@ function render(){
   document.body.classList.toggle('hasqbar', isDay);
   const toWeek = document.getElementById('toWeek');
   if(toWeek) toWeek.onclick = () => { state.view = 'week'; state.viewMenu = false; state.openForm = null; render(); };
+  const verBtn = document.getElementById('appVer');
+  if(verBtn) verBtn.onclick = async () => {
+    state.view = 'settings'; state.viewMenu = false; state.openForm = null;
+    render(); await renderContent();
+    const n = document.getElementById('nytt'); if(n) n.scrollIntoView({block:'start'});
+  };
   const vmBtn = document.getElementById('viewMenuBtn');
   if(vmBtn) vmBtn.onclick = () => { state.viewMenu = !state.viewMenu; render(); };
   const shiftDay = (n) => {
@@ -5596,6 +5648,9 @@ function renderSettings(content){
       </div>
       <div class="est-status" id="syncIOStatus" style="margin-top:8px;"></div>
     </div>
+
+    <div class="sectitle" id="nytt">Nytt</div>
+    <div class="card">${changelogHTML()}</div>
   `;
   document.getElementById('sSave').onclick = async () => {
     const newGoal = Number(document.getElementById('sGoal').value) || state.settings.dailyGoal;
