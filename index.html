@@ -854,14 +854,10 @@ window.onerror = function(msg, src, line, col, err){
   if(app) app.innerHTML = '<div class="card"><div class="empty">Ett fel uppstod: ' + msg + ' (rad ' + line + ')</div></div>';
 };
 
-/* Uppdateras vid varje publicering — visas i sidhuvudet så att man ser om sidan är cachad. */
-const APP_VERSION = '2026-10-10 18:56';
-function versionLabel(){
-  const [d, t] = APP_VERSION.split(' ');
-  const [y, m, dd] = d.split('-').map(Number);
-  const mon = ['jan','feb','mar','apr','maj','jun','jul','aug','sep','okt','nov','dec'][m-1];
-  return `v. ${dd} ${mon} ${t.replace(':','.')}`;
-}
+/* Versionsnummer — ökas med 1 vid varje publicering (och en rad läggs i CHANGELOG).
+   Syns i sidhuvudet så att man ser om sidan är cachad. */
+const APP_VERSION = 22;
+function versionLabel(){ return `v${APP_VERSION}`; }
 /* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
 const CHANGELOG = [
   ['2026-10-10', [
@@ -899,7 +895,7 @@ function changelogHTML(){
   const recent = CHANGELOG.slice(0, 3), older = CHANGELOG.slice(3);
   return `${recent.map(block).join('')}
     ${older.length ? `<details class="clolder"><summary>Äldre</summary>${older.map(block).join('')}</details>` : ''}
-    <div class="clver">Du kör ${versionLabel().replace('v. ', 'versionen från ')}</div>`;
+    <div class="clver">Du kör version ${APP_VERSION}</div>`;
 }
 let state = {
   settings: { dailyGoal: 2200, startWeight: 100, targetWeight: 90,
@@ -1628,7 +1624,7 @@ function render(){
         <button class="iconbtn" id="refreshAll" title="Hämta senaste data">⟳</button>
         <button class="iconbtn ${state.view==='settings'?'on':''}" id="openSettings" title="Inställningar">⚙</button>
       </div>
-      <button class="appver" id="appVer" title="Vad är nytt?">${versionLabel()}</button>
+      <button class="appver" id="appVer" title="Version ${APP_VERSION} — vad är nytt?">${versionLabel()}</button>
       </div>
     </header>
     ${isDay && state.viewMenu ? `<nav class="viewmenu">${viewBtns}</nav>` : ''}
