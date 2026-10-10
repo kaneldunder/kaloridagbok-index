@@ -1221,6 +1221,17 @@ function applyPantryToRow(idx, entry){
   // Sätt standardportionen om användaren inte skrivit något eget
   if(!row.amount || row.amount === 100 || row.amount === 1) row.amount = row.portion;
 }
+/* Sammanlagd vikt för en lista delar. Styckvaror räknas i gram när styckvikten är känd. */
+function partsWeightText(list){
+  let g = 0, st = 0;
+  (list || []).forEach(c => {
+    const a = Number(c.amount) || 0;
+    if(c.unit === 'st'){ const w = Number(c.gramPerStyck); if(w > 0) g += a * w; else st += a; }
+    else g += a;
+  });
+  const gTxt = Math.round(g).toLocaleString('sv-SE') + ' g';
+  return st ? `${gTxt} + ${String(st).replace('.', ',')} st` : gTxt;
+}
 function updateMealTotalsDOM(){
   const t = computeMealTotals();
   const kcalEl = document.getElementById('buildTotKcal');
@@ -1228,6 +1239,8 @@ function updateMealTotalsDOM(){
   const fatEl = document.getElementById('buildTotFat');
   const carbsEl = document.getElementById('buildTotCarbs');
   if(kcalEl) kcalEl.textContent = Math.round(t.kcal);
+  const wEl = document.getElementById('buildTotWeight');
+  if(wEl) wEl.textContent = partsWeightText(state.mealBuilder);
   if(proteinEl) proteinEl.textContent = Math.round(t.protein) + 'g';
   if(fatEl) fatEl.textContent = Math.round(t.fat) + 'g';
   if(carbsEl) carbsEl.textContent = Math.round(t.carbs) + 'g';
@@ -1751,6 +1764,7 @@ function leftoverForm(){
       <small>Från ${wd[from.getDay()]} ${from.getDate()} ${mn[from.getMonth()]}</small></div>
     ${body}
     <div class="mealtotals">
+      ${lo.comps ? `<div class="tot"><span>Vikt</span><b id="loTotW">${partsWeightText(lo.comps.filter(c => c.amount !== ''))}</b></div>` : ''}
       <div class="tot"><span>Totalt</span><b id="loTotKcal">${Math.round(t.kcal)}</b></div>
       <div class="tot"><span>Protein</span><b id="loTotP">${Math.round(t.protein)}g</b></div>
       <div class="tot"><span>Fett</span><b id="loTotF">${Math.round(t.fat)}g</b></div>
@@ -1864,7 +1878,7 @@ function componentEditor(item){
         <span class="compkcal" id="compKcal_${i}">${componentKcal(c)} kcal</span>
       </div>`;
     }).join('')}
-    <div class="comptot">Totalt <b id="compTotal">${Math.round(comps.reduce((a,c)=>a+componentKcal(c),0))}</b> kcal</div>
+    <div class="comptot"><span id="compWeight">${partsWeightText(comps)}</span> · Totalt <b id="compTotal">${Math.round(comps.reduce((a,c)=>a+componentKcal(c),0))}</b> kcal</div>
   </div>`;
 }
 
@@ -2304,6 +2318,7 @@ async function renderDay(content){
       const t = leftoverTotals(lo);
       const set = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
       set('loTotKcal', Math.round(t.kcal)); set('loTotP', Math.round(t.protein) + 'g');
+      if(lo.comps) set('loTotW', partsWeightText(lo.comps.filter(c => c.amount !== '')));
       set('loTotF', Math.round(t.fat) + 'g'); set('loTotC', Math.round(t.carbs) + 'g');
       const sv = document.getElementById('saveLeftover'); if(sv) sv.disabled = !(t.kcal > 0);
     };
@@ -2648,6 +2663,8 @@ async function renderDay(content){
     });
     const totEl = document.getElementById('compTotal');
     if(totEl) totEl.textContent = Math.round(tot.kcal);
+    const cw = document.getElementById('compWeight');
+    if(cw) cw.textContent = partsWeightText(comps);
     const set = (id,v) => { const e=document.getElementById(id); if(e) e.value = v; };
     set('eeKcal', Math.round(tot.kcal));
     set('eeProtein', Math.round(tot.protein));
@@ -3826,6 +3843,8 @@ function wireQuickParts(){
       if(el) el.textContent = componentKcal(state.quickParts[i]);
       const totEl = document.getElementById('qpTotal');
       if(totEl) totEl.textContent = Math.round(quickPartsTotals(state.quickParts).kcal);
+      const qw = document.getElementById('qpWeight');
+      if(qw) qw.textContent = partsWeightText(state.quickParts);
       syncQuickTotals();
     };
     inp.onfocus = () => setTimeout(() => inp.select(), 0);
@@ -3863,7 +3882,7 @@ function quickPartsBlock(){
       <span class="qpunit">${c.unit==='st'?'st':'g'}</span>
       <span class="qpkcal" id="qpKcal_${i}">${componentKcal(c)}</span>
     </div>`).join('')}
-    <div class="qptot">Totalt <b id="qpTotal">${Math.round(tot.kcal)}</b> kcal</div>
+    <div class="qptot"><span id="qpWeight">${partsWeightText(parts)}</span> · Totalt <b id="qpTotal">${Math.round(tot.kcal)}</b> kcal</div>
     ${state.quickNote ? `<div class="qpnote">${state.quickNote}</div>` : ''}
   </div>`;
 }
@@ -3889,6 +3908,7 @@ function buildMealForm(){
         <button class="addingbtn" id="addIngredient" style="flex:1; margin:0;">+ Tomt</button>
       </div>`}
     <div class="mealtotals">
+      <div class="tot"><span>Vikt</span><b id="buildTotWeight">${partsWeightText(state.mealBuilder)}</b></div>
       <div class="tot"><span>Totalt</span><b id="buildTotKcal">${Math.round(t.kcal)}</b></div>
       <div class="tot"><span>Protein</span><b id="buildTotProtein">${Math.round(t.protein)}g</b></div>
       <div class="tot"><span>Fett</span><b id="buildTotFat">${Math.round(t.fat)}g</b></div>
