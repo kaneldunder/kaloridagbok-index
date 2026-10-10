@@ -2715,7 +2715,7 @@ async function renderDay(content){
     try{
       const res = await callAnthropic({
         model: "claude-sonnet-4-6",
-        max_tokens: 700,
+        max_tokens: 2500,
         messages: [{ role: "user", content:
 `Dela upp denna loggade måltid i sina ingredienser: "${nameNow}"
 Måltidens registrerade värden: ${it.kcal} kcal, protein ${it.protein||0} g, fett ${it.fat||0} g, kolhydrater ${it.carbs||0} g.
@@ -2733,7 +2733,7 @@ Svara ENDAST med JSON, ingen markdown:
       });
       const tb = (res.content||[]).find(b => b.type === 'text');
       if(!tb) throw new Error('Tomt svar');
-      const parsed = JSON.parse(tb.text.replace(/```json|```/g,'').trim());
+      const parsed = parseAiJson(tb.text);
       const comps = (parsed.delar||[]).map(partFromAi)
         .filter(c => c.name && c.amount > 0);
       if(!comps.length) throw new Error('Inga delar hittades');
@@ -3654,7 +3654,7 @@ async function estimateMealPhoto(file){
     const base64 = await fileToBase64(file);
     const data = await callAnthropic({
       model: "claude-sonnet-4-6",
-      max_tokens: 600,
+      max_tokens: 1200,
       messages: [{
         role: "user",
         content: [
@@ -3665,7 +3665,7 @@ async function estimateMealPhoto(file){
     });
     const textBlock = (data.content || []).find(b => b.type === 'text');
     if(!textBlock) throw new Error('Tomt svar från modellen');
-    const p = JSON.parse(textBlock.text.replace(/```json|```/g, '').trim());
+    const p = parseAiJson(textBlock.text);
 
     // Fotot ersätter en tidigare textuppskattning — släng gamla delar
     if(state.quickParts){ state.quickParts = null; state.quickNote = null; paintQuickParts(); }
@@ -3715,7 +3715,7 @@ async function estimateMealParts(desc){
   const aiDesc = (partial && partial.unknown.length) ? partial.unknown.join(' och ') : desc;
   const data = await callAnthropic({
     model: "claude-sonnet-4-6",
-    max_tokens: 700,
+    max_tokens: 2500,
     messages: [{
       role: "user",
       content: `Du är en näringsdatabas. Dela upp denna måltid i sina delar och uppskatta varje del: "${aiDesc}"
@@ -3734,7 +3734,7 @@ Svara ENDAST med JSON, inga förklaringar, ingen markdown:
   });
   const textBlock = (data.content || []).find(b => b.type === 'text');
   if(!textBlock) throw new Error('Tomt svar från modellen');
-  const parsed = JSON.parse(textBlock.text.replace(/```json|```/g, '').trim());
+  const parsed = parseAiJson(textBlock.text);
   const aiParts = (parsed.delar || []).map(partFromAi)
     .filter(c => c.name && c.amount > 0);
 
@@ -3970,6 +3970,33 @@ function fileToBase64(file){
   });
 }
 
+/* Tolkar AI:ns JSON-svar tåligt: tar bort kodstaket och text runt omkring, och
+   klarar ett svar som klippts av mitt i en lista (räddar de delar som hann bli klara). */
+function parseAiJson(text){
+  let t = String(text || '').replace(/```json|```/g, '').trim();
+  const start = t.indexOf('{');
+  if(start < 0) throw new Error('Svaret innehöll ingen data');
+  t = t.slice(start);
+  const end = t.lastIndexOf('}');
+  if(end >= 0){ try{ return JSON.parse(t.slice(0, end + 1)); }catch(e){} }
+  // Avklippt svar: gå igenom tecken för tecken och kom ihåg senaste punkt där ett
+  // listelement var helt klart, stäng sedan öppna listor och objekt därifrån.
+  const stack = []; let inStr = false, esc = false, lastSafe = -1, safeStack = null;
+  for(let i = 0; i < t.length; i++){
+    const c = t[i];
+    if(inStr){ if(esc) esc = false; else if(c === '\\') esc = true; else if(c === '"') inStr = false; continue; }
+    if(c === '"'){ inStr = true; continue; }
+    if(c === '{' || c === '['){ stack.push(c); continue; }
+    if(c === '}' || c === ']'){
+      stack.pop();
+      if(stack.length && stack[stack.length-1] === '['){ lastSafe = i; safeStack = stack.slice(); }
+    }
+  }
+  if(lastSafe < 0) throw new Error('Svaret blev avklippt innan något hann bli klart');
+  const closing = safeStack.slice().reverse().map(ch => ch === '[' ? ']' : '}').join('');
+  return JSON.parse(t.slice(0, lastSafe + 1) + closing);
+}
+
 async function callAnthropic(payload){
   if(!state.aiKey){
     throw new Error('Ingen Anthropic API-nyckel angiven (se Inställningar)');
@@ -4020,7 +4047,7 @@ async function estimateIngredient(idx){
     const raw = raw0;
     const data = await callAnthropic({
       model: "claude-sonnet-4-6",
-      max_tokens: 400,
+      max_tokens: 900,
       messages: [{
         role: "user",
         content: `Du är en näringsdatabas. Texten kan innehålla en mängd: "${raw}".
@@ -4040,7 +4067,7 @@ Svara ENDAST med JSON, ingen markdown:
     });
     const textBlock = (data.content || []).find(b => b.type === 'text');
     if(!textBlock) throw new Error('Tomt svar från modellen');
-    const parsed = JSON.parse(textBlock.text.replace(/```json|```/g, '').trim());
+    const parsed = parseAiJson(textBlock.text);
 
     // Lokal tolkning vinner när den är exakt ("40 g"), annars modellens
     // Omräknaren bestämmer enheten — den vet vad en styck väger
@@ -4085,7 +4112,7 @@ async function scanLabel(idx, file, opts = {}){
     const mediaType = file.type || 'image/jpeg';
     const data = await callAnthropic({
       model: "claude-sonnet-4-6",
-      max_tokens: 400,
+      max_tokens: 900,
       messages: [{
         role: "user",
         content: [
@@ -4096,8 +4123,7 @@ async function scanLabel(idx, file, opts = {}){
     });
     const textBlock = (data.content || []).find(b => b.type === 'text');
     if(!textBlock) throw new Error('Tomt svar från modellen');
-    const cleaned = textBlock.text.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(cleaned);
+    const parsed = parseAiJson(textBlock.text);
 
     // Etiketten är alltid per 100 g — står raden i styckläge räknas den om
     const conv = partFromAi({ ...parsed, unit: row.unit });
@@ -5666,12 +5692,12 @@ function renderSettings(content){
       st().style.color='var(--muted)'; st().textContent='';
       try{
         const perPiece = R.unit === 'st';
-        const data = await callAnthropic({ model:"claude-sonnet-4-6", max_tokens:300,
+        const data = await callAnthropic({ model:"claude-sonnet-4-6", max_tokens:700,
           messages:[{ role:"user", content: perPiece
             ? `Ange näringsinnehåll PER 100 GRAM för: "${R.name}", samt styckvikt = vad EN normalstor enhet väger i gram. Svara ENDAST med JSON, ingen markdown: {"styckvikt":number,"kcalPer100g":number,"proteinPer100g":number,"fatPer100g":number,"carbsPer100g":number}`
             : `Uppskatta näringsinnehåll per 100 gram för: "${R.name}". Svara ENDAST med JSON, ingen markdown: {"kcalPer100g":number,"proteinPer100g":number,"fatPer100g":number,"carbsPer100g":number}` }]});
         const tb = (data.content||[]).find(b=>b.type==='text');
-        const raw = JSON.parse(tb.text.replace(/```json|```/g,'').trim());
+        const raw = parseAiJson(tb.text);
         fill(partFromAi({ ...raw, unit: R.unit }), false);
         const vikt = Number(raw.styckvikt || raw.gramPerStyck);
         if(perPiece && vikt > 0){
@@ -5697,12 +5723,12 @@ function renderSettings(content){
         st().style.color='var(--muted)'; st().textContent='';
         try{
           const b64 = await fileToBase64(file);
-          const data = await callAnthropic({ model:"claude-sonnet-4-6", max_tokens:400,
+          const data = await callAnthropic({ model:"claude-sonnet-4-6", max_tokens:900,
             messages:[{ role:"user", content:[
               { type:"image", source:{ type:"base64", media_type:file.type||'image/jpeg', data:b64 } },
               { type:"text", text:'Läs näringsdeklarationen och räkna om till PER 100 GRAM. Svara ENDAST med JSON, ingen markdown: {"name":string,"kcalPer100":number,"proteinPer100":number,"fatPer100":number,"carbsPer100":number}' }]}]});
           const tb = (data.content||[]).find(b=>b.type==='text');
-          fill(JSON.parse(tb.text.replace(/```json|```/g,'').trim()), true);
+          fill(parseAiJson(tb.text), true);
         }catch(e){ st().style.color='var(--rust)'; st().textContent='Fel: '+((e.message||'').slice(0,80)); }
         finally{ peScanBtn.disabled = false; peScanBtn.textContent = '📷 Skanna etikett'; }
       };
