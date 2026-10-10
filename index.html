@@ -855,7 +855,7 @@ window.onerror = function(msg, src, line, col, err){
 };
 
 /* Uppdateras vid varje publicering — visas i sidhuvudet så att man ser om sidan är cachad. */
-const APP_VERSION = '2026-10-10 18:46';
+const APP_VERSION = '2026-10-10 18:56';
 function versionLabel(){
   const [d, t] = APP_VERSION.split(' ');
   const [y, m, dd] = d.split('-').map(Number);
@@ -865,6 +865,8 @@ function versionLabel(){
 /* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
 const CHANGELOG = [
   ['2026-10-10', [
+    '⚖ Ändra mängd på en måltid utan delar — skalar kcal och makron exakt',
+    'Foto av en etikett ger en rad med gram som du kan ändra direkt',
     'Sammanlagd vikt visas när du matar in mängd per del',
     'Versionen syns i sidhuvudet, och den här listan',
     'Stabilare AI-svar — färre JSON-fel vid uppskattning och skanning'
