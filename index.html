@@ -2716,6 +2716,7 @@ async function renderDay(content){
       const res = await callAnthropic({
         model: "claude-sonnet-4-6",
         max_tokens: 2500,
+        jsonSchema: AI_SCHEMAS.parts,
         messages: [{ role: "user", content:
 `Dela upp denna loggade måltid i sina ingredienser: "${nameNow}"
 Måltidens registrerade värden: ${it.kcal} kcal, protein ${it.protein||0} g, fett ${it.fat||0} g, kolhydrater ${it.carbs||0} g.
@@ -3655,6 +3656,7 @@ async function estimateMealPhoto(file){
     const data = await callAnthropic({
       model: "claude-sonnet-4-6",
       max_tokens: 1200,
+      jsonSchema: AI_SCHEMAS.photo,
       messages: [{
         role: "user",
         content: [
@@ -3716,6 +3718,7 @@ async function estimateMealParts(desc){
   const data = await callAnthropic({
     model: "claude-sonnet-4-6",
     max_tokens: 2500,
+    jsonSchema: AI_SCHEMAS.parts,
     messages: [{
       role: "user",
       content: `Du är en näringsdatabas. Dela upp denna måltid i sina delar och uppskatta varje del: "${aiDesc}"
@@ -3997,9 +4000,34 @@ function parseAiJson(text){
   return JSON.parse(t.slice(0, lastSafe + 1) + closing);
 }
 
+/* Fasta svarsformulär: AI:n svarar via ett verktyg med schema, så svaret kommer
+   alltid som färdig data i stället för text som måste tolkas. */
+const AI_N = { type:'number' }, AI_NN = { type:['number','null'] }, AI_S = { type:'string' };
+const AI_PER100 = { kcalPer100g:AI_N, proteinPer100g:AI_N, fatPer100g:AI_N, carbsPer100g:AI_N };
+const AI_PER100_REQ = ['kcalPer100g','proteinPer100g','fatPer100g','carbsPer100g'];
+const AI_SCHEMAS = {
+  parts: { type:'object', properties:{
+    delar:{ type:'array', items:{ type:'object', properties:{ name:AI_S, gram:AI_N, styckAntal:AI_NN, styckvikt:AI_NN, ...AI_PER100 },
+      required:['name','gram', ...AI_PER100_REQ] } },
+    antaganden: AI_S }, required:['delar'] },
+  ingredient: { type:'object', properties:{ namn:AI_S, gram:AI_N, styckAntal:AI_NN, styckvikt:AI_NN, ...AI_PER100, antagande:AI_S },
+    required:['namn','gram', ...AI_PER100_REQ] },
+  photo: { type:'object', properties:{ namn:AI_S, kcal:AI_N, protein:AI_N, fat:AI_N, carbs:AI_N, delar:AI_S,
+    osakerhet:{ type:'string', enum:['lag','medel','hog'] } }, required:['namn','kcal','protein','fat','carbs'] },
+  label: { type:'object', properties:{ name:AI_S, styckvikt:AI_NN, ...AI_PER100 }, required:['name', ...AI_PER100_REQ] },
+  per100: { type:'object', properties:{ styckvikt:AI_NN, ...AI_PER100 }, required: AI_PER100_REQ },
+  label100: { type:'object', properties:{ name:AI_S, kcalPer100:AI_N, proteinPer100:AI_N, fatPer100:AI_N, carbsPer100:AI_N },
+    required:['name','kcalPer100','proteinPer100','fatPer100','carbsPer100'] }
+};
+
 async function callAnthropic(payload){
   if(!state.aiKey){
     throw new Error('Ingen Anthropic API-nyckel angiven (se Inställningar)');
+  }
+  const { jsonSchema, ...body } = payload;
+  if(jsonSchema){
+    body.tools = [{ name:'svar', description:'Lämna svaret här, med exakt de fält som efterfrågas. Siffror som tal, aldrig text.', input_schema: jsonSchema }];
+    body.tool_choice = { type:'tool', name:'svar' };
   }
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -4009,13 +4037,19 @@ async function callAnthropic(payload){
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true'
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(body)
   });
   if(!res.ok){
     const t = await res.text().catch(() => '');
     throw new Error(`API svarade ${res.status}: ${t.slice(0,150)}`);
   }
-  return await res.json();
+  const data = await res.json();
+  if(jsonSchema){
+    // Verktygssvaret är redan färdig data — lägg det som text så att anroparna kan läsa det som förut
+    const tu = (data.content || []).find(b => b.type === 'tool_use');
+    if(tu && tu.input) data.content = [{ type:'text', text: JSON.stringify(tu.input) }];
+  }
+  return data;
 }
 
 async function estimateIngredient(idx){
@@ -4048,6 +4082,7 @@ async function estimateIngredient(idx){
     const data = await callAnthropic({
       model: "claude-sonnet-4-6",
       max_tokens: 900,
+      jsonSchema: AI_SCHEMAS.ingredient,
       messages: [{
         role: "user",
         content: `Du är en näringsdatabas. Texten kan innehålla en mängd: "${raw}".
@@ -4113,6 +4148,7 @@ async function scanLabel(idx, file, opts = {}){
     const data = await callAnthropic({
       model: "claude-sonnet-4-6",
       max_tokens: 900,
+      jsonSchema: AI_SCHEMAS.label,
       messages: [{
         role: "user",
         content: [
@@ -5692,7 +5728,7 @@ function renderSettings(content){
       st().style.color='var(--muted)'; st().textContent='';
       try{
         const perPiece = R.unit === 'st';
-        const data = await callAnthropic({ model:"claude-sonnet-4-6", max_tokens:700,
+        const data = await callAnthropic({ model:"claude-sonnet-4-6", max_tokens:700, jsonSchema: AI_SCHEMAS.per100,
           messages:[{ role:"user", content: perPiece
             ? `Ange näringsinnehåll PER 100 GRAM för: "${R.name}", samt styckvikt = vad EN normalstor enhet väger i gram. Svara ENDAST med JSON, ingen markdown: {"styckvikt":number,"kcalPer100g":number,"proteinPer100g":number,"fatPer100g":number,"carbsPer100g":number}`
             : `Uppskatta näringsinnehåll per 100 gram för: "${R.name}". Svara ENDAST med JSON, ingen markdown: {"kcalPer100g":number,"proteinPer100g":number,"fatPer100g":number,"carbsPer100g":number}` }]});
@@ -5723,7 +5759,7 @@ function renderSettings(content){
         st().style.color='var(--muted)'; st().textContent='';
         try{
           const b64 = await fileToBase64(file);
-          const data = await callAnthropic({ model:"claude-sonnet-4-6", max_tokens:900,
+          const data = await callAnthropic({ model:"claude-sonnet-4-6", max_tokens:900, jsonSchema: AI_SCHEMAS.label100,
             messages:[{ role:"user", content:[
               { type:"image", source:{ type:"base64", media_type:file.type||'image/jpeg', data:b64 } },
               { type:"text", text:'Läs näringsdeklarationen och räkna om till PER 100 GRAM. Svara ENDAST med JSON, ingen markdown: {"name":string,"kcalPer100":number,"proteinPer100":number,"fatPer100":number,"carbsPer100":number}' }]}]});
