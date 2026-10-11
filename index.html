@@ -4,30 +4,30 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Kaloridagbok</title>
-<meta name="theme-color" content="#1F3A2E">
+<meta name="theme-color" content="#2D7A72">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=DM+Sans:wght@400;500;600;700&display=swap">
 <style>
   :root{
     color-scheme: dark;
-    --paper:#1F3A2E;
-    --card:#25453A;
-    --field:#2C4E41;
+    --paper:#2D7A72;
+    --card:#348379;
+    --field:#3B8C82;
     --ink:#F3EBDD;
-    --muted:#A9BFB0;
-    --line:#3B5D4F;
-    --sage:#8FC9A3;
-    --sage-light:#2E5244;
+    --muted:#CDE8E2;
+    --line:#55998F;
+    --sage:#BDEFE5;
+    --sage-light:#3A887F;
     --rust:#E58462;
     --rust-light:#4E3329;
-    --gold:#E9B44C;
-    --gold-ink:#F2CD7E;
-    --gold-light:#4A4127;
-    --on-accent:#17302A;
+    --gold:#CFA43E;
+    --gold-ink:#E3C277;
+    --gold-light:#3E3722;
+    --on-accent:#0E3A35;
     --plate:#F3EBDD;
-    --plate-ink:#1F3A2E;
-    --z-goal:#2F5D47;
-    --z-train:#7FA88A;
+    --plate-ink:#1B4D48;
+    --z-goal:#1B4D48;
+    --z-train:#9AD3C8;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{margin:0;padding:0;}
@@ -324,6 +324,11 @@
     background:var(--gold); color:var(--on-accent); font-size:26px; font-weight:700; line-height:1;
     display:flex; align-items:center; justify-content:center; font-family:inherit;}
   .favadd:active{transform:scale(.94);}
+  /* Metallguld på de stora knapparna */
+  .favadd, .qb-send{
+    background:linear-gradient(150deg,#F6E3A1 0%,#D9AE48 42%,#B0832A 78%,#D6AE52 100%)!important;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.45), 0 1px 3px rgba(0,0,0,.35);
+  }
   .etime{
     display:inline-block; font-size:11px; font-weight:600; color:var(--muted);
     background:var(--paper); border-radius:5px; padding:1px 5px; margin-right:6px;
@@ -665,9 +670,9 @@
   .loading{text-align:center; padding:60px 0; color:var(--muted); font-size:14px;}
 
   /* ---------- Tallriken (dagsvy) ---------- */
-  body{background:radial-gradient(130% 60% at 50% 18%, #2B4D3E 0%, #1F3A2E 55%, #19302A 100%) fixed, #1F3A2E;}
+  body{background:radial-gradient(130% 60% at 50% 18%, #3A8D84 0%, #2D7A72 55%, #256660 100%) fixed, #2D7A72;}
   input::placeholder{color:var(--muted); opacity:.7;}
-  html{background:#19302A;}
+  html{background:#256660;}
   .fieldgrid input{width:100%; border:1px solid var(--line); border-radius:9px; padding:9px 10px;
     font-size:14px; font-family:inherit; background:var(--field); color:var(--ink);}
   .entry .kcal{font-family:'Fraunces',Georgia,serif; font-size:18px; font-weight:600;}
@@ -730,8 +735,8 @@
     color:var(--plate-ink); pointer-events:none;
   }
   .dh-center b{font-family:'Fraunces',Georgia,serif; font-size:52px; font-weight:700; line-height:1; letter-spacing:-.02em;}
-  .dh-center span{font-size:13px; font-weight:500; color:#4F6B5C;}
-  .dh-legend{display:flex; justify-content:center; gap:12px; flex-wrap:wrap; font-size:12px; color:#CFDDD2;}
+  .dh-center span{font-size:13px; font-weight:500; color:#3F6F69;}
+  .dh-legend{display:flex; justify-content:center; gap:12px; flex-wrap:wrap; font-size:12px; color:#E2F2EE;}
   .dh-legend span{display:inline-flex; align-items:center; gap:5px;}
   .dh-legend i{width:10px; height:10px; border-radius:3px; display:block;}
   .dh-note{text-align:center; font-size:13px; color:var(--muted); margin:5px 0 12px; line-height:1.4;}
@@ -745,7 +750,7 @@
   .dh-active > svg{flex-shrink:0; color:var(--gold);}
   .dh-active .lbl{flex:1; min-width:0; display:flex; flex-direction:column;}
   .dh-active .lbl b{font-size:13px; font-weight:700;}
-  .dh-active .lbl small{font-size:11px; color:#CFDDD2;}
+  .dh-active .lbl small{font-size:11px; color:#E2F2EE;}
   .dh-active input{
     width:72px; border:none; border-bottom:1.5px solid var(--gold); background:transparent; border-radius:0;
     padding:2px 0; text-align:right; font-family:'Fraunces',Georgia,serif; font-size:26px; font-weight:700; color:var(--ink);
@@ -833,11 +838,11 @@
   .qbar{
     position:fixed; left:0; right:0; bottom:0; z-index:20;
     padding:14px 16px calc(14px + env(safe-area-inset-bottom));
-    background:linear-gradient(180deg, rgba(25,48,42,0) 0%, rgba(25,48,42,.92) 35%, #19302A 100%);
+    background:linear-gradient(180deg, rgba(37,102,96,0) 0%, rgba(37,102,96,.94) 35%, #256660 100%);
   }
   .qbar-in{max-width:520px; margin:0 auto; display:flex; align-items:center; gap:8px;}
   .qb-round{
-    width:48px; height:48px; flex-shrink:0; border-radius:50%; border:1px solid #4E7464; background:var(--field);
+    width:48px; height:48px; flex-shrink:0; border-radius:50%; border:1px solid #5FA59B; background:var(--field);
     color:var(--ink); display:flex; align-items:center; justify-content:center; cursor:pointer;
   }
   .qb-field{
@@ -869,11 +874,13 @@ window.onerror = function(msg, src, line, col, err){
 
 /* Versionsnummer — ökas med 1 vid varje publicering (och en rad läggs i CHANGELOG).
    Syns i sidhuvudet så att man ser om sidan är cachad. */
-const APP_VERSION = 22;
+const APP_VERSION = 23;
 function versionLabel(){ return `v${APP_VERSION}`; }
 /* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
 const CHANGELOG = [
   ['2026-10-11', [
+    'Nytt tema: turkos i Fortnum & Mason-anda med metallguld som accent',
+    'Favoriter: ändra och ta bort till vänster, stor guldknapp för att lägga till',
     'Rubriken följer delarna: fritextrubriker byggs om när du ändrar mängderna, egna rubriker lämnas orörda',
     'Namnet följer med när du byter mellan Snabb och Bygg av flera delar',
     'Startvikt (och valfritt startdatum) ritas in i årsgrafen och visas i Statistik',
@@ -2219,7 +2226,7 @@ function plateSVG(foods, burned, goal){
   const tick = v => {
     const ang = v / T * 2*Math.PI - Math.PI/2;
     return `<line x1="${(CX+100*Math.cos(ang)).toFixed(1)}" y1="${(CX+100*Math.sin(ang)).toFixed(1)}"
-      x2="${(CX+131*Math.cos(ang)).toFixed(1)}" y2="${(CX+131*Math.sin(ang)).toFixed(1)}" stroke="#1F3A2E" stroke-width="2" stroke-linecap="round"/>`;
+      x2="${(CX+131*Math.cos(ang)).toFixed(1)}" y2="${(CX+131*Math.sin(ang)).toFixed(1)}" stroke="#1B4D48" stroke-width="2" stroke-linecap="round"/>`;
   };
   let rim = '';
   if(burned > 0){
@@ -2273,7 +2280,7 @@ function weekStripHTML(){
     const isSel = k === sel;
     let svg;
     if(!t || t.intake <= 0){
-      svg = `<svg width="32" height="32" viewBox="0 0 34 34"><circle cx="17" cy="17" r="15" fill="none" stroke="${isSel?'#8FA898':'#4E7464'}" stroke-width="1.5" stroke-dasharray="3 3"/></svg>`;
+      svg = `<svg width="32" height="32" viewBox="0 0 34 34"><circle cx="17" cy="17" r="15" fill="none" stroke="${isSel?'#8FBDB5':'#6FB0A6'}" stroke-width="1.5" stroke-dasharray="3 3"/></svg>`;
     } else {
       const C = 2*Math.PI*11;
       const f = Math.min(1, t.intake / Math.max(1, goal + t.burned));
@@ -2295,7 +2302,7 @@ function dayHeroHTML(data, t){
 
   // Status
   const st = dayStatus(t, goal, remaining);
-  const sCol = !logged ? 'var(--muted)' : remaining >= 0 ? '#BFE0C6' : (zone === 'gold' ? 'var(--gold-ink)' : 'var(--rust)');
+  const sCol = !logged ? 'var(--muted)' : remaining >= 0 ? '#D7F3EC' : (zone === 'gold' ? 'var(--gold-ink)' : 'var(--rust)');
   const sBg  = !logged ? 'rgba(243,235,221,.06)' : remaining >= 0 ? 'rgba(127,168,138,.18)' : (zone === 'gold' ? 'rgba(233,180,76,.16)' : 'rgba(229,132,98,.16)');
   const statusLabel = remaining < 0 && zone === 'gold' ? 'Över planen' : st.label;
 
@@ -2353,7 +2360,7 @@ function dayHeroHTML(data, t){
         <span>kcal ${remaining >= 0 ? 'kvar' : 'över'}</span>
       </div>
     </div>
-    <div class="dh-legend">${leg.map(([k,l]) => `<span><i style="background:${ZONE_COL[k]};${k==='goal'?' box-shadow:0 0 0 1px #6F927C;':''}"></i>${l}</span>`).join('')}</div>
+    <div class="dh-legend">${leg.map(([k,l]) => `<span><i style="background:${ZONE_COL[k]};${k==='goal'?' box-shadow:0 0 0 1px #8FC7BD;':''}"></i>${l}</span>`).join('')}</div>
     <div class="dh-note">${note}</div>
     <div class="dh-row">
       ${baseline ? `<label class="dh-active ${activeVal !== '' ? 'filled' : ''}">
