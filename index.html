@@ -311,6 +311,19 @@
     width:24px; height:24px; line-height:1;
   }
   .entry .addfav{color:var(--sage); font-size:19px; font-weight:700;}
+  .favcard{gap:10px; align-items:center; padding:10px 10px 10px 6px;}
+  .favtools{display:flex; flex-direction:column; gap:2px; flex-shrink:0; align-self:stretch; justify-content:center;
+    border-right:1px solid var(--line); padding-right:4px;}
+  .favtools .del{width:30px; height:30px; font-size:15px; border-radius:8px;}
+  .favtools .del:hover{background:var(--line);}
+  .favtext{flex:1; min-width:0;}
+  .favtext .sub{overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;}
+  .favqty{display:flex; flex-direction:column; align-items:center; gap:5px; flex-shrink:0;}
+  .favqty .kcal{white-space:nowrap; font-size:13.5px;}
+  .entry .favadd, .favadd{flex-shrink:0; width:46px; height:46px; border-radius:50%; border:none; cursor:pointer;
+    background:var(--gold); color:var(--on-accent); font-size:26px; font-weight:700; line-height:1;
+    display:flex; align-items:center; justify-content:center; font-family:inherit;}
+  .favadd:active{transform:scale(.94);}
   .etime{
     display:inline-block; font-size:11px; font-weight:600; color:var(--muted);
     background:var(--paper); border-radius:5px; padding:1px 5px; margin-right:6px;
@@ -3818,24 +3831,26 @@ function favoritesPanel(){
         </div>
       </div>`;
     }
-    return `<div class="entry food" style="margin-bottom:8px;">
-      <div>
+    return `<div class="entry food favcard" style="margin-bottom:8px;">
+      <div class="favtools">
+        <button class="del editfav" data-idx="${i}" title="Redigera" aria-label="Redigera ${escapeHtml(f.name)}">✎</button>
+        <button class="del delfav" data-idx="${i}" title="Ta bort" aria-label="Ta bort ${escapeHtml(f.name)}">×</button>
+      </div>
+      <div class="favtext">
         <div class="name">${f.name}</div>
         <div class="sub">${f.components && f.components.length
           ? f.components.map(c=>c.unit==='st'?`${Number(c.amount)||0} st ${c.name}`:`${c.name} ${Number(c.amount)||0}g`).join(', ')
           : `P ${f.protein||0}g · F ${f.fat||0}g · K ${f.carbs||0}g`}</div>
       </div>
-      <div class="right">
+      <div class="favqty">
+        <div class="kcal" id="favKcal_${i}">${Math.round(f.kcal * favQty(i))} kcal</div>
         <div class="qtypick">
           <button class="qtybtn" data-idx="${i}" data-dir="-1">−</button>
           <span class="qtyval" id="favQty_${i}">${favQty(i)}</span>
           <button class="qtybtn" data-idx="${i}" data-dir="1">+</button>
         </div>
-        <div class="kcal" id="favKcal_${i}">${Math.round(f.kcal * favQty(i))} kcal</div>
-        <button class="del editfav" data-idx="${i}" title="Redigera">✎</button>
-        <button class="del addfav" data-idx="${i}" title="Lägg till idag">＋</button>
-        <button class="del delfav" data-idx="${i}" title="Ta bort">×</button>
       </div>
+      <button class="addfav favadd" data-idx="${i}" title="Lägg till idag" aria-label="Lägg till ${escapeHtml(f.name)} idag">+</button>
     </div>`;
   }
 
