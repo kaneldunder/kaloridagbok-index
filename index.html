@@ -1289,6 +1289,84 @@ function applyPantryToRow(idx, entry){
   if(!row.amount || row.amount === 100 || row.amount === 1) row.amount = row.portion;
 }
 /* Sammanlagd vikt för en lista delar. Styckvaror räknas i gram när styckvikten är känd. */
+/* ---------- Rubrik som följer delarna ----------
+   nameSource 'auto'   = rubriken kommer från fritexten (eller byggdes av delarna) och byggs om när delarna ändras.
+   nameSource 'manual' = rubrik du skrivit själv, lämnas alltid orörd.
+   Varje del bär en kort etikett (label) med ditt eget ord för den, t.ex. "surdegsbröd". */
+function shortPartName(name){
+  return String(name || '').split(/,\s+(?=[a-zåäöé])|\(/i)[0].trim().toLowerCase();
+}
+function stripAmount(seg){
+  return String(seg || '')
+    .replace(/^\s*(?:ca\.?\s*)?\d+(?:[.,]\d+)?\s*(?:g|gram|st|styck)?\.?\s+/i, '')
+    .replace(/\s+\d+(?:[.,]\d+)?\s*(?:g|gram|st|styck)\.?\s*$/i, '')
+    .trim();
+}
+function textSegments(text){
+  return String(text || '').split(/\s+med\s+|\s+och\s+|\s*,\s*|\s+\+\s+/i)
+    .map(stripAmount).filter(Boolean);
+}
+function nameTokens(t){
+  return String(t || '').toLowerCase().split(/[^a-zåäöéü0-9]+/i).filter(w => w.length >= 3);
+}
+function tokensMatch(a, b){
+  return nameTokens(a).some(x => nameTokens(b).some(y => {
+    const n = Math.min(5, x.length, y.length);
+    return x.slice(0, n) === y.slice(0, n);
+  }));
+}
+/* Ger varje del en etikett: ditt ord ur fritexten om det går att para ihop, annars delens korta namn. */
+function assignPartLabels(comps, text){
+  const segs = textSegments(text);
+  const used = new Set();
+  comps.forEach((c, i) => {
+    if(c.label) return;
+    let k = segs.findIndex((sg, j) => !used.has(j) && tokensMatch(sg, c.name));
+    if(k < 0 && segs.length === comps.length && !used.has(i)) k = i;
+    if(k >= 0){ used.add(k); c.label = segs[k]; c._ord = k; }
+    else c.label = shortPartName(c.name);
+  });
+  // Samma ordning som i fritexten; delar utan motsvarighet sist
+  comps.sort((a, b) => (a._ord ?? 99) - (b._ord ?? 99));
+  comps.forEach(c => { delete c._ord; });
+  return comps;
+}
+function partPhrase(c){
+  const label = c.label || shortPartName(c.name);
+  const a = Number(c.amount) || 0;
+  if(!a) return label;
+  const n = String(Math.round(a * 10) / 10).replace('.', ',');
+  return `${n} ${c.unit === 'st' ? 'st' : 'g'} ${label}`;
+}
+/* "190 g surdegsbröd med 30 g bregott och 40 g arla grevé" */
+function titleFromParts(comps){
+  const ps = (comps || []).filter(c => c && (c.name || c.label)).map(partPhrase);
+  if(!ps.length) return '';
+  if(ps.length === 1) return ps[0];
+  const rest = ps.slice(1);
+  return ps[0] + ' med ' + (rest.length === 1 ? rest[0] : rest.slice(0, -1).join(', ') + ' och ' + rest[rest.length - 1]);
+}
+/* Äldre poster saknar markering. Bara en ren fritextrubrik räknas som (a):
+   lika många led som delar, varje led börjar med en mängd ("120 g surdegsbröd")
+   och leden går att para ihop med delarna. Allt annat lämnas orört. */
+function isCleanFreeText(name, comps){
+  if(!comps || !comps.length || !name) return false;
+  if(/[.()]/.test(name.replace(/\d[.,]\d/g, ''))) return false;      // meningar och parenteser = egen text
+  const raw = String(name).split(/\s+med\s+|\s+och\s+|\s*,\s*|\s+\+\s+/i).filter(x => x.trim());
+  if(raw.length !== comps.length) return false;
+  if(!raw.every(x => /^\s*\d+(?:[.,]\d+)?\s*(?:g|gram|st|styck)\s+\S/i.test(x))) return false;
+  const used = new Set();
+  return comps.every(c => {
+    const k = raw.findIndex((x, j) => !used.has(j) && tokensMatch(stripAmount(x), c.name));
+    if(k < 0) return false;
+    used.add(k); return true;
+  });
+}
+function isAutoName(item){
+  if(!item) return false;
+  if(item.nameSource) return item.nameSource === 'auto';
+  return isCleanFreeText(item.name, item.components);
+}
 function partsWeightText(list){
   let g = 0, st = 0;
   (list || []).forEach(c => {
@@ -2043,7 +2121,7 @@ function entryEditRow(item, idx, type){
   return `<div class="entry ${type} editrow" style="flex-wrap:wrap; gap:8px; align-items:flex-start;">
     <div style="flex:1 1 200px; min-width:0; max-width:100%;">
       <div class="sub" style="margin-bottom:6px;">${type==='food'?'Redigera måltid':'Redigera träning'}</div>
-      <input id="eeName" placeholder="Namn" value="${(item.name||'').replace(/"/g,'&quot;')}"
+      <input id="eeName" placeholder="Namn" value="${escapeHtml(type === 'food' && state.editNameAuto && state.editingComps ? titleFromParts(state.editingComps) : (item.name||''))}"
         style="width:100%; border:1px solid var(--line); border-radius:8px; padding:8px 9px; font-size:14px; font-family:inherit; margin-bottom:6px;">
       <div class="eewhen">
         <label>Tid<input type="time" id="eeTime" value="${item.time || ''}"></label>
@@ -2405,7 +2483,7 @@ async function renderDay(content){
       const src = data.food[Number(btn.dataset.idx)];
       if(!src) return;
       state.leftover = {
-        name: src.name, fromKey: dateStr,
+        name: src.name, fromKey: dateStr, auto: isAutoName(src),
         comps: (src.components && src.components.length)
           ? src.components.map(c => ({ ...c, prevAmount: c.amount, amount: '' })) : null,
         whole: { kcal: Number(src.kcal)||0, protein: Number(src.protein)||0, fat: Number(src.fat)||0, carbs: Number(src.carbs)||0 },
@@ -2462,6 +2540,8 @@ async function renderDay(content){
       if(lo.comps){
         entry.components = lo.comps.filter(c => c.amount !== '' && Number(c.amount) > 0)
           .map(({ prevAmount, ...c }) => ({ ...c, amount: Number(c.amount) }));
+        if(lo.auto){ entry.name = titleFromParts(entry.components); entry.nameSource = 'auto'; }
+        else entry.nameSource = 'manual';
       }
       data.food.push(entry);
       sortByTime(data.food);
@@ -2485,6 +2565,7 @@ async function renderDay(content){
 
   const openQuickForm = async () => {
     state.quickParts = null; state.quickNote = null;
+    state.quickName = null; state.quickNameAuto = false;
     state.openForm = 'food';
     state.mealType = null;
     state.editingFav = null;
@@ -2731,6 +2812,10 @@ async function renderDay(content){
       state.editingComps = (it && it.components) ? it.components.map(c => ({...c})) : null;
       state.splitNote = null;
       state.amountEdit = null;
+      // Fritextrubrik: visa den ombyggd från delarna direkt
+      state.editNameAuto = isAutoName(it);
+      if(state.editNameAuto && state.editingComps) assignPartLabels(state.editingComps, it.name);
+      state.editingBase = state.editingComps ? state.editingComps.map(c => Number(c.amount) || 0) : null;
       renderContent();
     };
   });
@@ -2776,6 +2861,7 @@ async function renderDay(content){
     if(cw) cw.textContent = partsWeightText(comps);
     const set = (id,v) => { const e=document.getElementById(id); if(e) e.value = v; };
     set('eeKcal', Math.round(tot.kcal));
+    if(state.editNameAuto) set('eeName', titleFromParts(comps));
     set('eeProtein', Math.round(tot.protein));
     set('eeFat', Math.round(tot.fat));
     set('eeCarbs', Math.round(tot.carbs));
@@ -2799,9 +2885,9 @@ async function renderDay(content){
 
       if(state.editingComps){
         // Byggd måltid: skala varje ingrediens från ursprungsmängden
-        const base = it.components;
+        const base = state.editingBase || it.components.map(c => Number(c.amount) || 0);
         state.editingComps.forEach((c,i) => {
-          const orig = Number(base[i].amount) || 0;
+          const orig = Number(base[i]) || 0;
           c.amount = mode === 'plus'
             ? Math.round((Number(c.amount)||0) + orig)
             : Math.round(orig * Number(mode) * 10) / 10;
@@ -2836,7 +2922,9 @@ async function renderDay(content){
     if(!it) return;
     const g = guessLoggedAmount(it.name);
     state.amountEdit = { old: g ? g.amount : '', next: '', unit: g ? g.unit : 'g' };
-    const keep = ['eeName','eeTime','eeDate'].map(id => [id, (document.getElementById(id)||{}).value]);
+    state.amountEditName = it.name;
+    state.editNameAuto = it.nameSource ? it.nameSource === 'auto' : isCleanFreeText(it.name, [{ name: stripAmount(it.name) }]);
+    const keep = ['eeTime','eeDate'].map(id => [id, (document.getElementById(id)||{}).value]);
     const keptMt = (document.querySelector('.entry.editrow .mtbtn.active')||{}).dataset;
     await renderContent();
     keep.forEach(([id,v]) => { const e = document.getElementById(id); if(e && v != null) e.value = v; });
@@ -2852,6 +2940,11 @@ async function renderDay(content){
       if(!f) return;
       const set = (id, v, dec) => { const e = document.getElementById(id); if(e) e.value = dec ? Math.round(v*10)/10 : Math.round(v); };
       set('eeKcal', (it.kcal||0) * f);
+      if(state.editNameAuto){
+        const nmEl = document.getElementById('eeName');
+        const lbl = stripAmount(textSegments(it.name)[0] || '') || it.name;
+        if(nmEl) nmEl.value = titleFromParts([{ label: lbl, unit: state.amountEdit.unit, amount: Number(state.amountEdit.next) }]);
+      }
       set('eeProtein', (it.protein||0) * f, 1);
       set('eeFat', (it.fat||0) * f, 1);
       set('eeCarbs', (it.carbs||0) * f, 1);
@@ -2901,7 +2994,8 @@ Svara ENDAST med JSON, ingen markdown:
         .filter(c => c.name && c.amount > 0);
       if(!comps.length) throw new Error('Inga delar hittades');
       const sum = comps.reduce((a,c)=>a+componentKcal(c),0);
-      state.editingComps = comps;
+      state.editingComps = assignPartLabels(comps, nameNow);
+      state.editingBase = state.editingComps.map(c => Number(c.amount) || 0);
       state.splitNote = `Uppdelad i ${comps.length} delar · ${Math.round(sum)} kcal (loggat: ${it.kcal})`;
       renderContent();
     }catch(e){
@@ -2923,7 +3017,9 @@ Svara ENDAST med JSON, ingen markdown:
     if(st){ st.style.color = 'var(--muted)'; st.textContent = ''; }
     try{
       const { parts, note } = await estimateMealParts(desc);
-      state.editingComps = parts.map(c => ({...c}));
+      state.editingComps = assignPartLabels(parts.map(c => ({...c})), desc);
+      state.editingBase = state.editingComps.map(c => Number(c.amount) || 0);
+      state.editNameAuto = true;   // rubriken kommer nu från fritexten
       const t = quickPartsTotals(state.editingComps);
       state.splitNote = `${parts.length} ${parts.length===1?'del':'delar'} · ${Math.round(t.kcal)} kcal`
         + (note ? ' · ' + note : '');
@@ -2952,6 +3048,8 @@ Svara ENDAST med JSON, ingen markdown:
     }
   };
 
+  const eeNameEl = document.getElementById('eeName');
+  if(eeNameEl) eeNameEl.addEventListener('input', () => { state.editNameAuto = false; });
   const cancelEntry = document.getElementById('cancelEntry');
   if(cancelEntry) cancelEntry.onclick = () => { state.editingEntry = null; state.editingComps = null; state.splitNote = null; state.amountEdit = null; renderContent(); };
 
@@ -2974,24 +3072,18 @@ Svara ENDAST med JSON, ingen markdown:
       else if(state.amountEdit && amountEditFactor()){
         // Spara som en del med känd mängd — nästa gång räcker det att ändra siffran
         const a = state.amountEdit, n = Number(a.next);
-        // Står den gamla mängden i namnet, byt till den nya ("chips 50 g" → "chips 35 g")
-        const re = /(\d+(?:[.,]\d+)?)(\s*)(g|gram|st|styck)\b/i;
-        const gm = name.match(re);
-        if(gm && Number(gm[1].replace(',', '.')) === Number(a.old)){
-          item.name = name.replace(re, `${String(n).replace('.', ',')}$2$3`);
-        }
-        const compName = (item.name.replace(re, '').replace(/\s{2,}/g, ' ').replace(/[\s,–-]+$/, '').trim()) || item.name;
+        const compName = stripAmount(textSegments(state.amountEditName || name)[0] || '') || name;
         const per = v => { const x = (Number(v)||0) / (a.unit === 'st' ? n : n / 100); return Math.round(x * 10) / 10; };
-        item.components = [{ name: compName, unit: a.unit, amount: n,
+        item.components = [{ name: compName, label: compName, unit: a.unit, amount: n,
           kcalPer100: per(item.kcal), proteinPer100: per(item.protein),
           fatPer100: per(item.fat), carbsPer100: per(item.carbs), src: 'manual' }];
       }
-      // En enda del med mängden i namnet: håll namnet i takt med mängden
-      if(item.components && item.components.length === 1){
-        const c = item.components[0];
-        const re1 = /(\d+(?:[.,]\d+)?)(\s*)(g|gram|st|styck)\b/i, gm1 = item.name.match(re1);
-        if(gm1 && (/^st/i.test(gm1[3]) ? 'st' : 'g') === c.unit)
-          item.name = item.name.replace(re1, `${String(Number(c.amount)||0).replace('.', ',')}$2$3`);
+      // Fritextrubrik följer delarna; egen rubrik lämnas orörd
+      if(state.editNameAuto && item.components && item.components.length){
+        item.name = titleFromParts(item.components);
+        item.nameSource = 'auto';
+      } else {
+        item.nameSource = 'manual';
       }
       const activeMt = document.querySelector('.entry.editrow .mtbtn.active');
       if(activeMt) item.mealType = activeMt.dataset.mt;
@@ -3165,9 +3257,13 @@ Svara ENDAST med JSON, ingen markdown:
 
   const saveFoodBtn = document.getElementById('saveFood');
   if(saveFoodBtn) saveFoodBtn.onclick = async () => {
-    // Namn valfritt: faller tillbaka på måltidstypen
-    const name = document.getElementById('fName').value.trim()
+    // Namn valfritt: med delar byggs det av delarna, annars måltidstypen
+    const typedName = document.getElementById('fName').value.trim();
+    const hasParts = !!(state.quickParts && state.quickParts.length);
+    const name = typedName
+      || (hasParts ? titleFromParts(state.quickParts) : '')
       || mealTypeLabel(state.mealType) || '';
+    const nameSource = hasParts && (!typedName || state.quickNameAuto) ? 'auto' : 'manual';
     const kcal = Number(document.getElementById('fKcal').value) || 0;
     const protein = Number(document.getElementById('fProtein').value) || 0;
     const fat = Number(document.getElementById('fFat').value) || 0;
@@ -3185,12 +3281,12 @@ Svara ENDAST med JSON, ingen markdown:
     const fTimeVal = (fTimeEl && fTimeEl.value) ? fTimeEl.value : timeForEntry(name, state.mealType);
     // Delarna följer med så posten går att justera per ingrediens senare
     const qp = (state.quickParts && state.quickParts.length)
-      ? state.quickParts.map(c => ({ name:c.name, unit:c.unit, amount:c.amount,
+      ? state.quickParts.map(c => ({ name:c.name, ...(c.label ? { label:c.label } : {}), unit:c.unit, amount:c.amount,
           kcalPer100:c.kcalPer100, proteinPer100:c.proteinPer100,
           fatPer100:c.fatPer100, carbsPer100:c.carbsPer100,
           ...(c.gramPerStyck ? { gramPerStyck: c.gramPerStyck } : {}) }))
       : null;
-    data.food.push({ name, kcal, protein, fat, carbs, time: fTimeVal,
+    data.food.push({ name, nameSource, kcal, protein, fat, carbs, time: fTimeVal,
       ...(qp ? { components: qp } : {}),
       ...(state.mealType ? { mealType: state.mealType } : {}) });
     sortByTime(data.food);
@@ -3206,11 +3302,17 @@ Svara ENDAST med JSON, ingen markdown:
   };
 
   const modeQuick = document.getElementById('modeQuick');
-  if(modeQuick) modeQuick.onclick = () => { state.foodFormMode = 'quick'; renderContent(); };
+  if(modeQuick) modeQuick.onclick = () => {
+    const b = document.getElementById('buildMealName');
+    if(b) state.quickName = b.value;
+    state.foodFormMode = 'quick'; renderContent();
+  };
   const modeBuild = document.getElementById('modeBuild');
   if(modeBuild) modeBuild.onclick = () => {
+    const q = document.getElementById('fName');
+    state.buildName = q ? q.value : state.buildName;   // namnet följer med mellan lägena
     state.foodFormMode = 'build';
-    if(!state.mealBuilder.length) state.mealBuilder = [emptyIngredient()]; state.buildName = null;
+    if(!state.mealBuilder.length) state.mealBuilder = [emptyIngredient()];
     renderContent();
   };
 
@@ -3326,6 +3428,8 @@ Svara ENDAST med JSON, ingen markdown:
   }
   const bmn = document.getElementById('buildMealName');
   if(bmn) bmn.addEventListener('input', () => { state.buildName = bmn.value; });
+  const fNameEl = document.getElementById('fName');
+  if(fNameEl) fNameEl.addEventListener('input', () => { state.quickName = fNameEl.value; state.quickNameAuto = false; });
   const buildLabelBtn = document.getElementById('buildLabelBtn');
   const buildLabelInput = document.getElementById('buildLabelInput');
   if(buildLabelBtn && buildLabelInput){
@@ -3434,12 +3538,12 @@ Svara ENDAST med JSON, ingen markdown:
     const components = rows.map(({ scanned, amountTouched, pending, note, ...c }) => ({ ...c, amount: Number(c.amount) || 0 }));
     const t = computeMealTotals();
     const nameInput = document.getElementById('buildMealName').value.trim();
-    // Namn är valfritt: måltidstypen först, annars ingredienserna
-    const name = nameInput
-      || mealTypeLabel(state.mealType)
-      || components.map(c => c.name).join(', ');
+    // Namn är valfritt: utan eget namn byggs rubriken av delarna och följer dem framåt
+    components.forEach(c => { if(!c.label) c.label = shortPartName(c.name); });
+    const name = nameInput || titleFromParts(components);
     const entry = {
       name,
+      nameSource: nameInput ? 'manual' : 'auto',
       kcal: Math.round(t.kcal),
       protein: Math.round(t.protein),
       fat: Math.round(t.fat),
@@ -3791,9 +3895,12 @@ function foodForm(){
 
 function quickFoodForm(){
   const ed = state.editingFav !== null ? state.favorites[state.editingFav] : null;
-  const v = (k) => ed && ed[k] !== undefined ? ed[k] : '';
+  // Med delar räknas fälten fram ur delarna, så de överlever en omritning (t.ex. byte av läge)
+  const qt = (state.quickParts && state.quickParts.length) ? quickPartsTotals(state.quickParts) : null;
+  const v = (k) => qt ? (k === 'kcal' ? Math.round(qt.kcal) : Math.round(qt[k] * 10) / 10)
+    : (ed && ed[k] !== undefined ? ed[k] : '');
   return `
-    <div class="row"><input id="fName" placeholder="Vad åt du? (valfritt om du valt måltidstyp)" value="${ed ? ed.name : ''}"></div>
+    <div class="row"><input id="fName" placeholder="Vad åt du? (valfritt om du valt måltidstyp)" value="${escapeHtml(state.quickName != null ? state.quickName : (ed ? ed.name : ''))}"></div>
     <div class="mealtypes">
       <div class="mtrow">${MEAL_TYPES.slice(0,3).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
       <div class="mtrow">${MEAL_TYPES.slice(3,5).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}
@@ -3868,8 +3975,10 @@ Svara ENDAST med ett JSON-objekt, ingen markdown, inga kodstaket. Format exakt: 
     // Etikett: lägg in som en del med mängd, så att man kan ändra grammen direkt
     const lg = Number(p.gram), lk = Number(p.kcalPer100g);
     if(p.etikett && lg > 0 && lk > 0){
-      const nm = (nameEl && nameEl.value.trim()) || p.namn || 'Förpackning';
-      state.quickParts = [{ name: p.namn || nm, unit: 'g', amount: Math.round(lg),
+      const typed = nameEl && nameEl.value.trim();
+      const nm = typed || p.namn || 'Förpackning';
+      state.quickName = nm; state.quickNameAuto = !typed || typed === p.namn;
+      state.quickParts = [{ name: p.namn || nm, label: (p.namn || nm).toLowerCase(), unit: 'g', amount: Math.round(lg),
         kcalPer100: Math.round(lk), proteinPer100: Math.round((Number(p.proteinPer100g)||0)*10)/10,
         fatPer100: Math.round((Number(p.fatPer100g)||0)*10)/10, carbsPer100: Math.round((Number(p.carbsPer100g)||0)*10)/10,
         src: 'label' }];
@@ -3973,8 +4082,9 @@ async function estimateQuickMeal(){
   if(statusEl) statusEl.textContent = '';
   try{
     const { parts, note } = await estimateMealParts(desc);
-    state.quickParts = parts;
+    state.quickParts = assignPartLabels(parts, desc);
     state.quickNote = note;
+    state.quickName = desc; state.quickNameAuto = true;
     const st = document.getElementById('quickEstStatus');
     if(st) st.textContent = '';
     paintQuickParts();
@@ -4030,6 +4140,11 @@ function wireQuickParts(){
       const qw = document.getElementById('qpWeight');
       if(qw) qw.textContent = partsWeightText(state.quickParts);
       syncQuickTotals();
+      if(state.quickNameAuto){
+        const nm = document.getElementById('fName');
+        state.quickName = titleFromParts(state.quickParts);
+        if(nm) nm.value = state.quickName;
+      }
     };
     inp.onfocus = () => setTimeout(() => inp.select(), 0);
   });
@@ -4075,7 +4190,7 @@ function quickPartsBlock(){
 function buildMealForm(){
   const t = computeMealTotals();
   return `
-        <div class="row"><input id="buildMealName" placeholder="Namn (valfritt — annars måltidstypen)" value="${state.buildName != null ? escapeHtml(state.buildName) : (state.editingFav !== null && state.favorites[state.editingFav] ? escapeHtml(state.favorites[state.editingFav].name) : '')}"></div>
+        <div class="row"><input id="buildMealName" placeholder="Namn (valfritt — annars byggs det av delarna)" value="${state.buildName != null ? escapeHtml(state.buildName) : (state.editingFav !== null && state.favorites[state.editingFav] ? escapeHtml(state.favorites[state.editingFav].name) : '')}"></div>
     <div class="mealtypes">
       <div class="mtrow">${MEAL_TYPES.slice(0,3).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
       <div class="mtrow">${MEAL_TYPES.slice(3,5).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}
