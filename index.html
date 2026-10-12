@@ -835,6 +835,20 @@
   }
   .ing-amount.needamt{border-color:var(--gold) !important; box-shadow:0 0 0 2px rgba(233,180,76,.25);}
   body.hasqbar{padding-bottom:96px;}
+  .undobar{
+    position:fixed; left:50%; bottom:calc(92px + env(safe-area-inset-bottom)); z-index:30;
+    transform:translate(-50%, 12px); opacity:0; transition:opacity .2s, transform .2s;
+    width:min(488px, calc(100% - 32px)); box-sizing:border-box;
+    display:flex; align-items:center; gap:10px; padding:10px 10px 10px 14px;
+    background:#123B37; color:var(--ink); border-radius:14px; box-shadow:0 6px 20px rgba(0,0,0,.35);
+    font-size:13.5px;
+  }
+  .undobar.show{opacity:1; transform:translate(-50%, 0);}
+  .ub-text{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted);}
+  .ub-text b{color:var(--ink); font-weight:600;}
+  .ub-btn{flex-shrink:0; border:none; border-radius:10px; padding:8px 14px; cursor:pointer; font:inherit; font-weight:700;
+    color:var(--on-accent); background:linear-gradient(150deg,#F6E3A1 0%,#D9AE48 42%,#B0832A 78%,#D6AE52 100%);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.45);}
   .qbar{
     position:fixed; left:0; right:0; bottom:0; z-index:20;
     padding:14px 16px calc(14px + env(safe-area-inset-bottom));
@@ -3619,11 +3633,39 @@ Svara ENDAST med JSON, ingen markdown:
     btn.onclick = async () => {
       const type = btn.dataset.type, idx = Number(btn.dataset.idx);
       if(!type) return;
-      data[type].splice(idx,1);
+      const [removed] = data[type].splice(idx,1);
       await saveDay(dateStr, data);
       renderContent();
+      if(removed) showUndo(removed, type, dateStr, idx);
     };
   });
+}
+
+/* Ångra: en remsa ovanför skrivfältet i några sekunder efter att något tagits bort. */
+let undoTimer = null;
+function hideUndo(){
+  clearTimeout(undoTimer);
+  const el = document.getElementById('undoBar');
+  if(el){ el.classList.remove('show'); setTimeout(() => el.remove(), 250); }
+}
+function showUndo(item, type, dateStr, idx){
+  hideUndo();
+  const old = document.getElementById('undoBar'); if(old) old.remove();
+  const el = document.createElement('div');
+  el.id = 'undoBar'; el.className = 'undobar'; el.setAttribute('role', 'status');
+  el.innerHTML = `<span class="ub-text">Borttagen: <b>${escapeHtml(item.name || '')}</b></span>
+    <button type="button" class="ub-btn" id="undoBtn">Ångra</button>`;
+  document.body.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  el.querySelector('#undoBtn').onclick = async () => {
+    hideUndo();
+    const d = await loadDay(dateStr);
+    d[type] = d[type] || [];
+    d[type].splice(Math.min(idx, d[type].length), 0, item);
+    await saveDay(dateStr, d);
+    renderContent();
+  };
+  undoTimer = setTimeout(hideUndo, 8000);
 }
 
 /* Liggande staplat diagram: andel av dagens kalorier per makro.
