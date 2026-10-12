@@ -888,10 +888,13 @@ window.onerror = function(msg, src, line, col, err){
 
 /* Versionsnummer — ökas med 1 vid varje publicering (och en rad läggs i CHANGELOG).
    Syns i sidhuvudet så att man ser om sidan är cachad. */
-const APP_VERSION = 23;
+const APP_VERSION = 24;
 function versionLabel(){ return `v${APP_VERSION}`; }
 /* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
 const CHANGELOG = [
+  ['2026-10-12', [
+    'Ångra-knapp i några sekunder efter att du tagit bort en post'
+  ]],
   ['2026-10-11', [
     'Nytt tema: turkos i Fortnum & Mason-anda med metallguld som accent',
     'Favoriter: ändra och ta bort till vänster, stor guldknapp för att lägga till',
