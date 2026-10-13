@@ -888,10 +888,13 @@ window.onerror = function(msg, src, line, col, err){
 
 /* Versionsnummer — ökas med 1 vid varje publicering (och en rad läggs i CHANGELOG).
    Syns i sidhuvudet så att man ser om sidan är cachad. */
-const APP_VERSION = 24;
+const APP_VERSION = 25;
 function versionLabel(){ return `v${APP_VERSION}`; }
 /* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
 const CHANGELOG = [
+  ['2026-10-13', [
+    'AI-uppskattningen räknar stekfett bara en gång när smör eller olja står som egen del'
+  ]],
   ['2026-10-12', [
     'Ångra-knapp i några sekunder efter att du tagit bort en post'
   ]],
