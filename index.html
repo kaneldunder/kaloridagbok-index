@@ -1385,6 +1385,19 @@ function partPhrase(c){
   return `${n} ${c.unit === 'st' ? 'st' : 'g'} ${label}`;
 }
 /* "190 g surdegsbröd med 30 g bregott och 40 g arla grevé" */
+/* Namn efter portionsändring. Befintligt "N× " räknas in; en inledande mängd skalas direkt. */
+function scaledName(name, f){
+  const fmt = v => String(Math.round(v * 10) / 10).replace('.', ',');
+  let base = String(name || ''), k = 1;
+  const pre = base.match(/^(\d+(?:[.,]\d+)?)\s*×\s+(.+)$/);
+  if(pre){ k = Number(pre[1].replace(',', '.')) || 1; base = pre[2]; }
+  const nk = k * f;
+  if(k === 1){
+    const am = base.match(/^(\d+(?:[.,]\d+)?)(\s*)(g|gram|st|styck|dl|cl|ml)\b/i);
+    if(am) return fmt(Number(am[1].replace(',', '.')) * f) + am[2] + am[3] + base.slice(am[0].length);
+  }
+  return Math.abs(nk - 1) < 1e-9 ? base : `${fmt(nk)}× ${base}`;
+}
 function titleFromParts(comps){
   const ps = (comps || []).filter(c => c && (c.name || c.label)).map(partPhrase);
   if(!ps.length) return '';
@@ -2168,7 +2181,7 @@ function entryEditRow(item, idx, type){
     <div style="flex:1 1 200px; min-width:0; max-width:100%;">
       <div class="sub" style="margin-bottom:6px;">${type==='food'?'Redigera måltid':'Redigera träning'}</div>
       <input id="eeName" placeholder="Namn" value="${escapeHtml(type === 'food' && state.editNameAuto && state.editingComps ? titleFromParts(state.editingComps) : (item.name||''))}"
-        style="width:100%; border:1px solid var(--line); border-radius:8px; padding:8px 9px; font-size:14px; font-family:inherit; margin-bottom:6px;">
+        style="width:100%; border:1px solid var(--line); border-radius:8px; padding:8px 9px; font-size:14px; font-family:inherit; margin-bottom:6px; background:var(--field); color:var(--ink);">
       <div class="eewhen">
         <label>Tid<input type="time" id="eeTime" value="${item.time || ''}"></label>
         <label>Datum<input type="date" id="eeDate" value="${ymd(state.currentDate)}"></label>
@@ -2862,6 +2875,7 @@ async function renderDay(content){
       state.editNameAuto = isAutoName(it);
       if(state.editNameAuto && state.editingComps) assignPartLabels(state.editingComps, it.name);
       state.editingBase = state.editingComps ? state.editingComps.map(c => Number(c.amount) || 0) : null;
+      state.editFactor = 1; state.editNameTouched = false;
       renderContent();
     };
   });
@@ -2959,6 +2973,12 @@ async function renderDay(content){
       }
       content.querySelectorAll('.scalebtn').forEach(b =>
         b.classList.toggle('active', b === btn && mode !== 'plus'));
+      // Portionen syns i namnet: "40 g chips" → "80 g chips", annars "2× Tre kokta ägg"
+      state.editFactor = mode === 'plus' ? (state.editFactor || 1) + 1 : Number(mode);
+      if(!state.editNameAuto && !state.editNameTouched){
+        const nm = document.getElementById('eeName');
+        if(nm) nm.value = scaledName(it.name, state.editFactor);
+      }
     };
   });
 
@@ -3096,7 +3116,7 @@ Svara ENDAST med JSON, ingen markdown:
   };
 
   const eeNameEl = document.getElementById('eeName');
-  if(eeNameEl) eeNameEl.addEventListener('input', () => { state.editNameAuto = false; });
+  if(eeNameEl) eeNameEl.addEventListener('input', () => { state.editNameAuto = false; state.editNameTouched = true; });
   const cancelEntry = document.getElementById('cancelEntry');
   if(cancelEntry) cancelEntry.onclick = () => { state.editingEntry = null; state.editingComps = null; state.splitNote = null; state.amountEdit = null; renderContent(); };
 
