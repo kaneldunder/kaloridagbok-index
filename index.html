@@ -3026,6 +3026,7 @@ Regler:
 4. Räknas livsmedlet i stycken, ange även styckAntal och styckvikt (ägg ≈ 60 g, brödskiva ≈ 30 g, fralla ≈ 45 g). Appen räknar själv.
 3. Delarnas summa ska hamna nära de registrerade värdena ovan. Justera rimliga mängder så att det stämmer.
 4. Anges ingen mängd för en del, uppskatta en rimlig portion.
+5. Stekfett räknas bara en gång: finns smör, olja eller annat stekfett som egen del ska stekt mat räknas utan det fettet (stekt ägg som kokt ägg).
 
 Svara ENDAST med JSON, ingen markdown:
 {"delar":[{"name":string,"gram":number,"styckAntal":number|null,"styckvikt":number|null,"kcalPer100g":number,"proteinPer100g":number,"fatPer100g":number,"carbsPer100g":number}]}` }]
@@ -4104,15 +4105,17 @@ async function estimateMealParts(desc){
     jsonSchema: AI_SCHEMAS.parts,
     messages: [{
       role: "user",
-      content: `Du är en näringsdatabas. Dela upp denna måltid i sina delar och uppskatta varje del: "${aiDesc}"
+      content: `Du är en näringsdatabas. Dela upp denna måltid i sina delar och uppskatta varje del: "${aiDesc}"${aiDesc !== desc ? `
+(Hela måltiden är: "${desc}" — övriga delar finns redan i användarens bibliotek.)` : ''}
 
 Regler:
 1. En rad per livsmedel. Enhet "g" för sådant som vägs, "st" för sådant som räknas (ägg, frukt, frallor, skivor).
 2. Näringsvärdena ska ALLTID vara PER 100 GRAM — aldrig per styck, aldrig multiplicerat med mängden.
 3. gram = delens TOTALA vikt i gram. "3 skivor sidfläsk" med 20 g per skiva → gram: 60.
 4. Räknas livsmedlet i stycken, ange även styckAntal och styckvikt (ägg ≈ 60 g, brödskiva ≈ 30 g, fralla ≈ 45 g). Appen räknar själv.
-3. Anges ingen mängd, utgå från typisk svensk normalstorlek.
-4. Anta vanligast förekommande beredning.
+5. Anges ingen mängd, utgå från typisk svensk normalstorlek.
+6. Anta vanligast förekommande beredning.
+7. Stekfett räknas bara en gång. Nämns smör, olja eller annat stekfett i måltiden ska det vara en egen rad, och stekt mat räknas då UTAN det fettet (stekt ägg med samma värden som kokt ägg, stekt kyckling som tillagad utan fett). Nämns inget stekfett räknas det in i den stekta delen som vanligt.
 
 Svara ENDAST med JSON, inga förklaringar, ingen markdown:
 {"delar":[{"name":string,"gram":number,"styckAntal":number|null,"styckvikt":number|null,"kcalPer100g":number,"proteinPer100g":number,"fatPer100g":number,"carbsPer100g":number}],"antaganden":"kort text"}`
