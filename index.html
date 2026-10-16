@@ -835,6 +835,35 @@
   }
   .ing-amount.needamt{border-color:var(--gold) !important; box-shadow:0 0 0 2px rgba(233,180,76,.25);}
   body.hasqbar{padding-bottom:96px;}
+  /* Favoriter: sök, oftast, fällbara grupper */
+  .favsearch{width:100%; box-sizing:border-box; border:1px solid var(--line); background:var(--field); color:var(--ink); border-radius:12px; padding:11px 12px; font:inherit; font-size:15px; margin-bottom:12px;}
+  .favsearch::placeholder{color:var(--muted);}
+  .oftast{margin-bottom:14px;}
+  .of-lbl, .favgroups .fg-n{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);}
+  .of-lbl{margin-bottom:7px;}
+  .of-row{display:flex; flex-wrap:wrap; gap:7px;}
+  .ofchip{display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line); background:var(--field); color:var(--ink); border-radius:999px; padding:0 0 0 12px; font:inherit; font-size:13px; overflow:hidden; cursor:pointer; max-width:100%;}
+  .of-n{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:190px; padding:8px 0;}
+  .of-k{color:var(--muted); font-size:12px;}
+  .of-p{align-self:stretch; width:32px; display:flex; align-items:center; justify-content:center; font-size:17px; font-weight:700; color:var(--on-accent);
+    background:linear-gradient(150deg,#F6E3A1 0%,#D9AE48 42%,#B0832A 78%,#D6AE52 100%);}
+  .favgroup2{border:1px solid var(--line); border-radius:14px; margin-bottom:8px; background:rgba(255,255,255,.03); overflow:hidden;}
+  .fg-head{width:100%; display:flex; align-items:center; gap:8px; border:none; background:transparent; color:var(--ink); font:inherit; padding:12px 12px; cursor:pointer; text-align:left;}
+  .fg-head b{font-size:14.5px;}
+  .fg-ic{width:22px; text-align:center;}
+  .fg-n{background:var(--field); border-radius:999px; padding:1px 7px; letter-spacing:0; font-size:11.5px;}
+  .fg-peek{flex:1; min-width:0; font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .fg-chev{color:var(--muted); flex-shrink:0; transition:transform .15s;}
+  .favgroup2.open .fg-chev{transform:rotate(180deg);}
+  .favgroup2.open .fg-peek{visibility:hidden;}
+  .fg-body{display:none; padding:0 8px 4px;}
+  .favgroup2.open .fg-body{display:block;}
+  .searching .oftast{display:none;}
+  .searching .favgroup2{border:none; background:transparent;}
+  .searching .fg-head{display:none;}
+  .searching .fg-body{display:block; padding:0;}
+  .favnohit{display:none; color:var(--muted); font-size:13px; padding:10px 2px;}
+  .favgroups.nohit .favnohit{display:block;}
   /* Öppen nota */
   body.hasnota #content{padding-bottom:150px;}
   .notacard{position:fixed; left:12px; right:12px; bottom:calc(84px + env(safe-area-inset-bottom)); z-index:21; max-width:496px; margin:0 auto;
@@ -3440,6 +3469,24 @@ Svara ENDAST med JSON, ingen markdown:
     renderContent();
   };
 
+  content.querySelectorAll('.fg-head').forEach(b => b.onclick = () => {
+    const g = b.closest('.favgroup2'); const k = b.dataset.g;
+    if(!state.favOpen) state.favOpen = new Set();
+    const now = !g.classList.contains('open');
+    g.classList.toggle('open', now); b.setAttribute('aria-expanded', now);
+    if(now) state.favOpen.add(k); else state.favOpen.delete(k);
+  });
+  const favSearch = document.getElementById('favSearch');
+  if(favSearch) favSearch.oninput = () => {
+    const q = favSearch.value.trim().toLowerCase();
+    const box = document.getElementById('favGroups');
+    const form = favSearch.closest('.form');
+    form.classList.toggle('searching', !!q);
+    let hits = 0;
+    box.querySelectorAll('.favitem').forEach(el => { const ok = !q || el.dataset.q.includes(q); el.style.display = ok ? '' : 'none'; if(ok) hits++; });
+    box.querySelectorAll('.favgroup2').forEach(g => { g.style.display = (!q || g.querySelector('.favitem:not([style*="none"])')) ? '' : 'none'; });
+    box.classList.toggle('nohit', !!q && !hits);
+  };
   const toggleFavGroup = document.getElementById('toggleFavGroup');
   if(toggleFavGroup) toggleFavGroup.onclick = () => { state.favGrouped = !state.favGrouped; renderContent(); };
 
@@ -4127,6 +4174,26 @@ function entryRow(item, idx, type){
   </div>`;
 }
 
+/* Hur många gånger varje favorit loggats, och som vilken måltidstyp oftast. */
+function favStats(){
+  const names = new Map(state.favorites.map((f, i) => [f.name, i]));
+  const count = {}, types = {};
+  Object.values(state.cache || {}).forEach(d => (d.food || []).forEach(e => {
+    const nm = String(e.name || '').replace(/^\d+(?:[.,]\d+)?\s*×\s*/, '');
+    const i = names.get(nm); if(i === undefined) return;
+    count[i] = (count[i] || 0) + 1;
+    const mt = isAlcoholEntry(e) ? 'alkohol' : e.mealType;
+    if(mt){ types[i] = types[i] || {}; types[i][mt] = (types[i][mt] || 0) + 1; }
+  }));
+  return { count, types };
+}
+function favTypeOf(f, i, st){
+  if(f.mealType) return f.mealType;
+  if(isAlcoholEntry(f)) return 'alkohol';
+  const t = st.types[i];
+  if(t){ const best = Object.entries(t).sort((a, b) => b[1] - a[1])[0]; if(best) return best[0]; }
+  return detectMealType(f.name) || null;
+}
 function favoritesPanel(){
   const grouped = state.favGrouped;
   const favs = state.favorites;
@@ -4167,32 +4234,44 @@ function favoritesPanel(){
     </div>`;
   }
 
+  // Hur ofta och som vad varje favorit faktiskt loggats
+  const st = favStats();
+  const ORDER = ['frukost','lunch','middag','mellanmal','snack','alkohol',null];
+  const LABELS = { frukost:'Frukost', lunch:'Lunch', middag:'Middag', mellanmal:'Mellanmål', snack:'Snacks', alkohol:'Alkohol', null:'Övrigt' };
+  const ICON = k => k ? entryLook(k, 'food').icon : '🍴';
+  const byUse = (a, b) => (st.count[b.i] || 0) - (st.count[a.i] || 0) || a.f.name.localeCompare(b.f.name, 'sv');
+  const all = favs.map((f, i) => ({ f, i, k: favTypeOf(f, i, st) }));
+  const groups = {}; ORDER.forEach(k => groups[k] = []);
+  all.forEach(x => groups[ORDER.includes(x.k) ? x.k : null].push(x));
+  ORDER.forEach(k => groups[k].sort(byUse));
+  const open = state.favOpen || (state.favOpen = new Set());
+  const top = all.filter(x => (st.count[x.i] || 0) > 0).sort(byUse).slice(0, 5);
+  const wrap = x => `<div class="favitem" data-q="${escapeHtml((x.f.name || '').toLowerCase())}">${favCard(x.f, x.i)}</div>`;
+
   let body = '';
   if(!favs.length){
     body = '<div class="empty">Inga favoriter ännu.</div>';
-  } else if(!grouped){
-    body = favs.map((f,i) => favCard(f,i)).join('');
   } else {
-    // Group by mealType — detect from saved mealType or name
-    const ORDER = ['frukost','lunch','middag','mellanmal','snack','alkohol',null];
-    const groups = {};
-    ORDER.forEach(k => groups[k] = []);
-    favs.forEach((f,i) => {
-      const mt = f.mealType || detectMealType(f.name) || null;
-      const key = ORDER.includes(mt) ? mt : null;
-      groups[key].push({f,i});
-    });
-    const LABELS = {
-      frukost:'Frukost', lunch:'Lunch', middag:'Middag',
-      mellanmal:'Mellanmål', snack:'Snack', alkohol:'Alkohol', null:'Övrigt'
-    };
-    ORDER.forEach(k => {
-      if(!groups[k].length) return;
-      body += `<div class="favgroup">
-        <div class="favgrouplbl">${LABELS[k]}</div>
-        ${groups[k].map(({f,i}) => favCard(f,i)).join('')}
+    body = `${favs.length > 6 ? `<input type="search" id="favSearch" class="favsearch" placeholder="Sök bland ${favs.length} favoriter" autocomplete="off">` : ''}
+      ${top.length ? `<div class="oftast"><div class="of-lbl">Oftast</div><div class="of-row">
+        ${top.map(x => `<button type="button" class="ofchip addfav" data-idx="${x.i}" title="Lägg till ${escapeHtml(x.f.name)}">
+          <span class="of-n">${ICON(x.k)} ${escapeHtml(x.f.name)}</span><span class="of-k">${Math.round(x.f.kcal)}</span><span class="of-p">+</span></button>`).join('')}
+      </div></div>` : ''}
+      <div class="favgroups" id="favGroups">
+      ${ORDER.filter(k => groups[k].length).map(k => {
+        const isOpen = open.has(String(k));
+        return `<div class="favgroup2 ${isOpen ? 'open' : ''}" data-g="${k}">
+          <button type="button" class="fg-head" data-g="${k}" aria-expanded="${isOpen}">
+            <span class="fg-ic">${ICON(k)}</span><b>${LABELS[k]}</b>
+            <span class="fg-n">${groups[k].length}</span>
+            <span class="fg-peek">${escapeHtml(groups[k].slice(0, 3).map(x => x.f.name).join(' · '))}</span>
+            <svg class="fg-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="fg-body">${groups[k].map(wrap).join('')}</div>
+        </div>`;
+      }).join('')}
+      <div class="favnohit">Ingen favorit matchar.</div>
       </div>`;
-    });
   }
 
   return `<div class="form">
@@ -4202,9 +4281,6 @@ function favoritesPanel(){
     </div>
     ${openNota() ? `<div class="ns-note">🍷 Notan <b>${escapeHtml(openNota().name)}</b> är öppen — det du lägger till hamnar där.</div>`
       : `<button type="button" class="notaopenbtn" id="openNotaBtn">🍷 Öppna nota <small>för en middag eller fest</small></button>`}
-    <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
-      <button class="misshide" id="toggleFavGroup">${grouped ? '☰ Visa som lista' : '⊞ Visa grupperat'}</button>
-    </div>
     ${body}
     <div class="actions"><button class="cancel" id="cancelForm">Tillbaka</button></div>
   </div>`;
