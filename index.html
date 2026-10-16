@@ -835,6 +835,44 @@
   }
   .ing-amount.needamt{border-color:var(--gold) !important; box-shadow:0 0 0 2px rgba(233,180,76,.25);}
   body.hasqbar{padding-bottom:96px;}
+  /* Öppen nota */
+  body.hasnota #content{padding-bottom:150px;}
+  .notacard{position:fixed; left:12px; right:12px; bottom:calc(84px + env(safe-area-inset-bottom)); z-index:21; max-width:496px; margin:0 auto;
+    background:#123B37; border:1px solid var(--gold); border-radius:18px; padding:12px 12px 12px 14px; box-shadow:0 10px 28px rgba(0,0,0,.4);}
+  .nc-head{display:flex; align-items:center; gap:8px; margin-bottom:10px;}
+  .nc-dot{width:8px; height:8px; flex-shrink:0; border-radius:50%; background:var(--gold-ink); box-shadow:0 0 0 4px rgba(207,164,62,.25);}
+  .nc-title{flex:1; min-width:0; font-weight:700; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .nc-title small{display:block; font-weight:400; font-size:11.5px; color:var(--muted);}
+  .nc-kcal{font-family:'Fraunces',serif; font-size:20px; font-weight:700; white-space:nowrap;} .nc-kcal span{font-family:'DM Sans',sans-serif; font-size:11px; color:var(--muted); font-weight:500;}
+  .nc-close{border:1px solid var(--line); background:transparent; color:var(--muted); border-radius:9px; padding:6px 10px; font:inherit; font-size:12px; font-weight:600; cursor:pointer;}
+  .nc-items{display:flex; flex-wrap:wrap; gap:7px; max-height:96px; overflow-y:auto;}
+  .nc-chip{display:inline-flex; align-items:center; border-radius:999px; background:var(--field); border:1px solid var(--line); overflow:hidden; font:inherit; font-size:13px; color:var(--ink); padding:0; cursor:pointer; max-width:100%;}
+  .nc-chip .lbl{padding:7px 4px 7px 12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:170px;} .nc-chip .n{color:var(--gold-ink); font-weight:700; margin-left:4px;}
+  .nc-chip .plus{width:34px; align-self:stretch; display:flex; align-items:center; justify-content:center; font-size:18px; font-weight:700; color:var(--on-accent);
+    background:linear-gradient(150deg,#F6E3A1 0%,#D9AE48 42%,#B0832A 78%,#D6AE52 100%); margin-left:6px;}
+  .nc-chip:active{transform:scale(.96);}
+  .nc-chip.other{border-style:dashed; background:transparent;} .nc-chip.other .lbl{padding:7px 12px; color:var(--muted);}
+  .notaopenbtn{width:100%; display:flex; align-items:center; gap:8px; border:1px solid var(--gold); background:rgba(207,164,62,.12); color:var(--ink);
+    border-radius:12px; padding:11px 14px; font:inherit; font-weight:700; font-size:14.5px; cursor:pointer; margin-bottom:12px; text-align:left;}
+  .notaopenbtn small{font-weight:400; color:var(--muted); font-size:12px;}
+  .ns-note{font-size:13px; color:var(--muted); background:rgba(207,164,62,.12); border:1px solid var(--gold); border-radius:12px; padding:10px 12px; margin-bottom:12px;}
+  .ns-note b{color:var(--ink);}
+  .notastart .ns-title{font-family:'Fraunces',serif; font-size:21px; font-weight:700; margin-bottom:4px;}
+  .notastart .ns-text{font-size:13px; color:var(--muted); margin-bottom:12px; line-height:1.45;}
+  .notastart #notaName{width:100%; box-sizing:border-box; border:1px solid var(--line); background:var(--field); color:var(--ink); border-radius:12px; padding:12px; font:inherit; font-size:16px; margin-bottom:14px;}
+  .ns-lbl{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-bottom:8px;}
+  .ns-sugg{display:flex; flex-wrap:wrap; gap:7px; margin-bottom:14px;}
+  .ns-sg{border:1px solid var(--line); background:transparent; color:var(--ink); border-radius:999px; padding:7px 12px; font:inherit; font-size:13px; cursor:pointer;}
+  .ns-sg.on{background:var(--sage); color:var(--on-accent); border-color:var(--sage); font-weight:700;}
+  .notagroup{border:1px solid var(--gold); border-radius:14px; padding:10px 12px; margin-bottom:8px; background:var(--card);}
+  .ng-head{width:100%; display:flex; align-items:center; gap:8px; border:none; background:transparent; color:var(--ink); font:inherit; padding:0; cursor:pointer; text-align:left;}
+  .ng-head b{flex:1; min-width:0; font-size:14.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .ng-head .k{font-family:'Fraunces',serif; font-weight:700; font-size:15px;}
+  .ng-chev{color:var(--muted); flex-shrink:0;}
+  .ng-sub{font-size:12px; color:var(--muted); margin-top:3px; line-height:1.45;}
+  .ng-tag{font-size:10.5px; font-weight:700; color:var(--on-accent); background:var(--gold-ink); border-radius:6px; padding:2px 6px;}
+  .notagroup.isopen .ng-tag{background:var(--sage);}
+  .ng-rows{margin-top:10px;} .ng-rows .entry{background:var(--field);}
   .undobar{
     position:fixed; left:50%; bottom:calc(92px + env(safe-area-inset-bottom)); z-index:30;
     transform:translate(-50%, 12px); opacity:0; transition:opacity .2s, transform .2s;
@@ -1528,7 +1566,7 @@ const MEAL_TYPES = [
   { key:'middag',    label:'Middag',    time:'18:00', match:/^\s*(middag|kvällsmat|dinner)\b/i },
   { key:'mellanmal', label:'Mellanmål', time:'15:00', match:/^\s*(mellanmål|fika)\b/i },
   { key:'snack',     label:'Snack',     time:'21:00', match:/^\s*(snack|kvällsmat|gottis|chips|nötter|frukt)\b/i },
-  { key:'alkohol',   label:'Alkohol',   time:'19:00', match:/(^|\s)(alkohol|öl|vin|sprit|cocktail|cider|champagne|prosecco|whisky|whiskey|vodka|gin\b|rom|calvados|cognac|aperol|aperitif)(\s|$|,)/i }
+  { key:'alkohol',   label:'Alkohol',   time:'19:00', match:/(^|\s)(alkohol|(stark|mellan)?öl|(röd|vit|rosé|rose|dessert|mousserande\s)?vin|glögg|snaps|grogg|drink|sprit|cocktail|cider|champagne|cava|crémant|prosecco|whisky|whiskey|vodka|gin\b|rom|calvados|cognac|aperol|aperitif)(\s|$|,)/i }
 ];
 function mealTypeLabel(key){
   const m = MEAL_TYPES.find(x => x.key === key);
@@ -2449,7 +2487,7 @@ function quickBarHTML(){
     </button>
     <input type="file" accept="image/*" capture="environment" id="qbPhoto" style="display:none">
     <form class="qb-field" id="qbForm" autocomplete="off">
-      <input type="text" id="qbText" placeholder="Vad åt du?" aria-label="Vad åt du?" enterkeyhint="send">
+      <input type="text" id="qbText" placeholder="${openNota() && notaApplies(openNota(), ymd(state.currentDate)) ? 'Lägg till i notan…' : 'Vad åt du?'}" aria-label="Vad åt du?" enterkeyhint="send">
       <button type="submit" class="qb-send" aria-label="Lägg till">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
       </button>
@@ -2460,8 +2498,121 @@ function quickBarHTML(){
   </div></div>`;
 }
 
+/* ---------- Öppen nota ----------
+   En nota samlar kvällens saker under ett namn. Varje sak är en vanlig post med `nota: id`,
+   så statistiken räknar vin som alkohol och mat som mat. Den öppna notan bor i settings.openNota
+   så att den följer med mellan enheter. */
+function openNota(){ return state.settings.openNota || null; }
+function notaApplies(n, dateStr){
+  if(!n) return false;
+  const next = ymd(new Date(new Date(n.date + 'T12:00:00').getTime() + 86400000));
+  return dateStr === n.date || dateStr === next;
+}
+/* Stängs automatiskt nästa morgon (efter kl 06) */
+function autoCloseNota(){
+  const n = openNota(); if(!n) return false;
+  const today = todayYmd();
+  if(n.date < today && (new Date().getHours() >= 6 || !notaApplies(n, today))){
+    state.settings.openNota = null; return true;
+  }
+  return false;
+}
+function attachNota(entry, dateStr){
+  const n = openNota();
+  if(n && notaApplies(n, dateStr)){
+    entry.nota = n.id; entry.notaName = n.name;
+    if(!entry.mealType && isAlcoholEntry(entry)) entry.mealType = 'alkohol';
+    if(dateStr === todayYmd()) entry.time = nowHM();
+  }
+  return entry;
+}
+function notaMembers(id){
+  const out = [];
+  Object.entries(state.cache || {}).forEach(([d, v]) => (v.food || []).forEach((f, i) => { if(f.nota === id) out.push({ d, i, f }); }));
+  return out;
+}
+function notaItems(id){
+  const map = new Map();
+  notaMembers(id).forEach(({ f }) => {
+    const k = f.name;
+    const it = map.get(k) || { name: f.name, count: 0, kcal: 0, tpl: f, mt: f.mealType };
+    it.count++; it.kcal += Number(f.kcal) || 0; it.tpl = f;
+    map.set(k, it);
+  });
+  return [...map.values()];
+}
+function notaIcon(f){ return entryLook(f.mealType || detectMealType(f.name), 'food').icon; }
+function notaChipLabel(name){
+  return String(name).replace(/^(ett|en)\s+(glas|bit|näve|skiva)\s+/i, '').replace(/^\d+\s*×\s*/, '').replace(/^./, c => c.toUpperCase());
+}
+function notaCardHTML(dateStr){
+  const n = openNota();
+  if(!n || !notaApplies(n, dateStr)) return '';
+  const items = notaItems(n.id);
+  const total = items.reduce((a, x) => a + x.kcal, 0);
+  const cnt = items.reduce((a, x) => a + x.count, 0);
+  state._notaItems = items;
+  return `<div class="notacard" id="notaCard">
+    <div class="nc-head"><span class="nc-dot"></span>
+      <div class="nc-title">${escapeHtml(n.name)}<small>Öppen sedan ${n.started} · ${cnt} ${cnt === 1 ? 'sak' : 'saker'}</small></div>
+      <div class="nc-kcal">${nf(Math.round(total))} <span>kcal</span></div>
+      <button type="button" class="nc-close" id="notaClose">Stäng</button></div>
+    <div class="nc-items">
+      ${items.map((x, k) => `<button type="button" class="nc-chip" data-nk="${k}" aria-label="En till: ${escapeHtml(x.name)}">
+        <span class="lbl">${notaIcon(x.tpl)} ${escapeHtml(notaChipLabel(x.name))}${x.count > 1 ? `<span class="n">×${x.count}</span>` : ''}</span><span class="plus">+</span></button>`).join('')}
+      <button type="button" class="nc-chip other" id="notaOther"><span class="lbl">+ annat</span></button>
+    </div></div>`;
+}
+function notaStartForm(){
+  const favs = state.favorites.map((f, i) => ({ f, i }));
+  const mt = x => x.f.mealType || detectMealType(x.f.name);
+  favs.sort((a, b) => (mt(a) === 'alkohol' ? 0 : 1) - (mt(b) === 'alkohol' ? 0 : 1));
+  const sel = state.notaPick || new Set();
+  return `<div class="form notastart">
+    <div class="ns-title">🍷 Öppna nota</div>
+    <div class="ns-text">Allt du lägger till hamnar under samma nota tills du stänger den. Den stängs automatiskt i morgon bitti.</div>
+    <input id="notaName" placeholder="T.ex. Middag hos Anna" value="${escapeHtml(state.notaNameDraft || '')}">
+    ${favs.length ? `<div class="ns-lbl">Lägg i direkt (valfritt)</div>
+    <div class="ns-sugg">${favs.slice(0, 10).map(x => `<button type="button" class="ns-sg ${sel.has(x.i) ? 'on' : ''}" data-fi="${x.i}">${notaIcon(x.f)} ${escapeHtml(x.f.name)}</button>`).join('')}</div>` : ''}
+    <div class="actions"><button class="cancel" id="cancelForm">Avbryt</button><button class="save" id="notaStart">Öppna nota</button></div>
+  </div>`;
+}
+function notaGroupHTML(id, food){
+  const mem = food.map((f, i) => ({ f, i })).filter(x => x.f.nota === id);
+  const isOpen = openNota() && openNota().id === id;
+  const editingHere = mem.some(x => (state.editingEntry && state.editingEntry.type === 'food' && state.editingEntry.idx === x.i)
+    || (state.editingTime && state.editingTime.type === 'food' && state.editingTime.idx === x.i));
+  const expanded = editingHere || (state.notaExpanded && state.notaExpanded.has(id));
+  const total = mem.reduce((a, x) => a + (Number(x.f.kcal) || 0), 0);
+  const times = mem.map(x => x.f.time).filter(Boolean).sort();
+  const counts = new Map(); mem.forEach(x => counts.set(x.f.name, (counts.get(x.f.name) || 0) + 1));
+  const summary = [...counts.entries()].map(([nm, c]) => (c > 1 ? c + '× ' : '') + nm).join(' · ');
+  const name = mem[0].f.notaName || 'Nota';
+  return `<div class="notagroup ${isOpen ? 'isopen' : ''}">
+    <button type="button" class="ng-head" data-nota="${id}" aria-expanded="${expanded}">
+      <span class="ng-tag">${isOpen ? 'ÖPPEN' : 'NOTA'}</span><b>${escapeHtml(name)}</b><span class="k">${nf(Math.round(total))}</span>
+      <svg class="ng-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="${expanded ? 'M6 15l6-6 6 6' : 'M6 9l6 6 6-6'}"/></svg>
+    </button>
+    <div class="ng-sub">${times.length ? times[0] + (times.length > 1 ? '–' + times[times.length - 1] : '') + ' · ' : ''}${escapeHtml(summary)}</div>
+    ${expanded ? `<div class="ng-rows">${mem.map(x => foodRowFor(x.f, x.i)).join('')}</div>` : ''}
+  </div>`;
+}
+function foodRowFor(f, i){
+  return (state.editingTime && state.editingTime.type === 'food' && state.editingTime.idx === i) ? timeEditRow(f, i, 'food')
+    : (state.editingEntry && state.editingEntry.type === 'food' && state.editingEntry.idx === i) ? entryEditRow(f, i, 'food')
+    : entryRow(f, i, 'food');
+}
+function foodListHTML(food){
+  const seen = new Set();
+  return food.map((f, i) => {
+    if(f.nota){ if(seen.has(f.nota)) return ''; seen.add(f.nota); return notaGroupHTML(f.nota, food); }
+    return foodRowFor(f, i);
+  }).join('');
+}
+
 async function renderDay(content){
   const dateStr = ymd(state.currentDate);
+  if(autoCloseNota()) ghSaveBundle();
   const data = await loadDay(dateStr);
   const t = dayTotals(data);
   const goal = state.settings.dailyGoal;
@@ -2501,12 +2652,9 @@ async function renderDay(content){
     ${state.openForm === 'food' ? foodForm()
       : state.openForm === 'leftover' ? leftoverForm()
       : state.openForm === 'favorites' ? favoritesPanel()
+      : state.openForm === 'notaStart' ? notaStartForm()
       : state.openForm === 'copyDay' ? copyDayPanel() : ''}
-    ${data.food.length ? data.food.map((f,i)=>
-      (state.editingTime && state.editingTime.type==='food' && state.editingTime.idx===i)
-        ? timeEditRow(f,i,'food')
-      : (state.editingEntry && state.editingEntry.type==='food' && state.editingEntry.idx===i)
-        ? entryEditRow(f,i,'food') : entryRow(f,i,'food')).join('') : `<div class="empty">Inga måltider loggade</div>`}
+    ${data.food.length ? foodListHTML(data.food) : `<div class="empty">Inga måltider loggade</div>`}
 
     ${!state.openForm && copyDayAvailable() ? `<button class="linkbtn" id="copyDayBtn">⧉ Kopiera en tidigare dag</button>` : ''}
     ${(() => {
@@ -2530,13 +2678,75 @@ async function renderDay(content){
           : `<div class="empty">Ingen träning loggad</div>`}`;
     })()}
     `}
-    ${!state.openForm && state.selectedEntries.size === 0 ? quickBarHTML() : ''}
+    ${!state.openForm && state.selectedEntries.size === 0 ? notaCardHTML(dateStr) + quickBarHTML() : ''}
   `;
+  document.body.classList.toggle('hasnota', !!(!state.openForm && state.selectedEntries.size === 0 && notaCardHTML(dateStr)));
   document.body.classList.toggle('hasqbar', !state.openForm && state.selectedEntries.size === 0);
   const wkLbl = document.getElementById('toWeek');
   if(wkLbl) wkLbl.innerHTML = weekLabelHTML(state.currentDate);
   const mealToggle = document.getElementById('mealToggle');
   if(mealToggle) mealToggle.onclick = () => { state.mealsOpen = !mealsExpanded; renderContent(); };
+
+  // ----- Nota
+  const openNotaBtn = document.getElementById('openNotaBtn');
+  if(openNotaBtn) openNotaBtn.onclick = () => {
+    state.openForm = 'notaStart'; state.notaPick = new Set(); state.notaNameDraft = '';
+    renderContent().then(() => { const n = document.getElementById('notaName'); if(n) n.focus(); });
+  };
+  const notaNameEl = document.getElementById('notaName');
+  if(notaNameEl) notaNameEl.oninput = () => { state.notaNameDraft = notaNameEl.value; };
+  content.querySelectorAll('.ns-sg').forEach(b => b.onclick = () => {
+    const i = Number(b.dataset.fi);
+    if(!state.notaPick) state.notaPick = new Set();
+    if(state.notaPick.has(i)) state.notaPick.delete(i); else state.notaPick.add(i);
+    b.classList.toggle('on', state.notaPick.has(i));
+  });
+  const notaStartBtn = document.getElementById('notaStart');
+  if(notaStartBtn) notaStartBtn.onclick = async () => {
+    const nm = (document.getElementById('notaName') || {}).value || '';
+    const today = todayYmd();
+    state.settings.openNota = { id: 'n' + Date.now().toString(36), name: nm.trim() || ('Nota ' + nowHM()), date: today, started: nowHM() };
+    const d = await loadDay(today);
+    [...(state.notaPick || [])].forEach(i => {
+      const fav = state.favorites[i]; if(!fav) return;
+      const e = { name: fav.name, kcal: fav.kcal, protein: fav.protein || 0, fat: fav.fat || 0, carbs: fav.carbs || 0,
+        ...(fav.mealType ? { mealType: fav.mealType } : {}),
+        ...(fav.components && fav.components.length ? { components: fav.components.map(c => ({ ...c })) } : {}) };
+      d.food.push(attachNota(e, today));
+    });
+    sortByTime(d.food);
+    state.notaPick = null; state.notaNameDraft = '';
+    state.openForm = null; state.mealType = null;
+    state.currentDate = new Date();
+    await saveDay(today, d);
+    render();
+  };
+  content.querySelectorAll('.nc-chip[data-nk]').forEach(b => b.onclick = async () => {
+    const it = (state._notaItems || [])[Number(b.dataset.nk)]; if(!it) return;
+    const { time, nota, notaName, ...tpl } = it.tpl;
+    const e = attachNota(JSON.parse(JSON.stringify(tpl)), dateStr);
+    data.food.push(e); sortByTime(data.food);
+    await saveDay(dateStr, data);
+    renderContent();
+    showToast(`La till <b>${escapeHtml(notaChipLabel(it.name))}</b> · nu ×${it.count + 1}`, async () => {
+      const d = await loadDay(dateStr); const k = d.food.indexOf(e);
+      if(k >= 0){ d.food.splice(k, 1); await saveDay(dateStr, d); renderContent(); }
+    });
+  });
+  const notaOther = document.getElementById('notaOther');
+  if(notaOther) notaOther.onclick = () => { const q = document.getElementById('qbText'); if(q) q.focus(); };
+  const notaClose = document.getElementById('notaClose');
+  if(notaClose) notaClose.onclick = async () => {
+    const n = openNota(); state.settings.openNota = null;
+    if(n){ if(!state.notaExpanded) state.notaExpanded = new Set(); state.notaExpanded.delete(n.id); }
+    await ghSaveBundle(); renderContent();
+  };
+  content.querySelectorAll('.ng-head').forEach(b => b.onclick = () => {
+    if(!state.notaExpanded) state.notaExpanded = new Set();
+    const id = b.dataset.nota;
+    if(state.notaExpanded.has(id)) state.notaExpanded.delete(id); else state.notaExpanded.add(id);
+    renderContent();
+  });
   content.querySelectorAll('.eatagain').forEach(btn => {
     btn.onclick = (e) => {
       e.stopPropagation();
@@ -2603,6 +2813,7 @@ async function renderDay(content){
         if(lo.auto){ entry.name = titleFromParts(entry.components); entry.nameSource = 'auto'; }
         else entry.nameSource = 'manual';
       }
+      attachNota(entry, dateStr);
       data.food.push(entry);
       sortByTime(data.food);
       saveLo.disabled = true; saveLo.textContent = 'Sparar…';
@@ -3259,6 +3470,7 @@ Svara ENDAST med JSON, ingen markdown:
       if(fav.components && fav.components.length){
         entry.components = fav.components.map(c => ({...c, amount: (Number(c.amount)||0) * q}));
       }
+      attachNota(entry, dateStr);
       data.food.push(entry);
       sortByTime(data.food);
       await saveDay(dateStr, data);
@@ -3354,9 +3566,9 @@ Svara ENDAST med JSON, ingen markdown:
           fatPer100:c.fatPer100, carbsPer100:c.carbsPer100,
           ...(c.gramPerStyck ? { gramPerStyck: c.gramPerStyck } : {}) }))
       : null;
-    data.food.push({ name, nameSource, kcal, protein, fat, carbs, time: fTimeVal,
+    data.food.push(attachNota({ name, nameSource, kcal, protein, fat, carbs, time: fTimeVal,
       ...(qp ? { components: qp } : {}),
-      ...(state.mealType ? { mealType: state.mealType } : {}) });
+      ...(state.mealType ? { mealType: state.mealType } : {}) }, dateStr));
     sortByTime(data.food);
     await saveDay(dateStr, data);
     const favCb = document.getElementById('fSaveFav');
@@ -3629,6 +3841,7 @@ Svara ENDAST med JSON, ingen markdown:
       renderContent();
       return;
     }
+    attachNota(entry, dateStr);
     data.food.push(entry);
     sortByTime(data.food);
     await saveDay(dateStr, data);
@@ -3676,6 +3889,24 @@ function hideUndo(){
   const el = document.getElementById('undoBar');
   if(el){ el.classList.remove('show'); setTimeout(() => el.remove(), 250); }
 }
+/* Remsan läggs ovanför notakortet om det är öppet, annars ovanför skrivfältet. */
+function placeToast(el){
+  const card = document.getElementById('notaCard');
+  if(card){ el.style.bottom = (window.innerHeight - card.getBoundingClientRect().top + 8) + 'px'; }
+}
+/* Kort besked med Ångra-knapp; onUndo körs om man trycker. */
+function showToast(html, onUndo){
+  hideUndo();
+  const old = document.getElementById('undoBar'); if(old) old.remove();
+  const el = document.createElement('div');
+  el.id = 'undoBar'; el.className = 'undobar'; el.setAttribute('role', 'status');
+  el.innerHTML = `<span class="ub-text">${html}</span><button type="button" class="ub-btn" id="undoBtn">Ångra</button>`;
+  document.body.appendChild(el);
+  placeToast(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  el.querySelector('#undoBtn').onclick = async () => { hideUndo(); await onUndo(); };
+  undoTimer = setTimeout(hideUndo, 6000);
+}
 function showUndo(item, type, dateStr, idx){
   hideUndo();
   const old = document.getElementById('undoBar'); if(old) old.remove();
@@ -3684,6 +3915,7 @@ function showUndo(item, type, dateStr, idx){
   el.innerHTML = `<span class="ub-text">Borttagen: <b>${escapeHtml(item.name || '')}</b></span>
     <button type="button" class="ub-btn" id="undoBtn">Ångra</button>`;
   document.body.appendChild(el);
+  placeToast(el);
   requestAnimationFrame(() => el.classList.add('show'));
   el.querySelector('#undoBtn').onclick = async () => {
     hideUndo();
@@ -3964,6 +4196,8 @@ function favoritesPanel(){
       <div class="mtrow">${MEAL_TYPES.slice(0,3).map(m=>`<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
       <div class="mtrow">${MEAL_TYPES.slice(3).map(m=>`<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
     </div>
+    ${openNota() ? `<div class="ns-note">🍷 Notan <b>${escapeHtml(openNota().name)}</b> är öppen — det du lägger till hamnar där.</div>`
+      : `<button type="button" class="notaopenbtn" id="openNotaBtn">🍷 Öppna nota <small>för en middag eller fest</small></button>`}
     <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
       <button class="misshide" id="toggleFavGroup">${grouped ? '☰ Visa som lista' : '⊞ Visa grupperat'}</button>
     </div>
