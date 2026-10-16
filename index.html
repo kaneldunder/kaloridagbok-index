@@ -926,10 +926,14 @@ window.onerror = function(msg, src, line, col, err){
 
 /* Versionsnummer — ökas med 1 vid varje publicering (och en rad läggs i CHANGELOG).
    Syns i sidhuvudet så att man ser om sidan är cachad. */
-const APP_VERSION = 26;
+const APP_VERSION = 27;
 function versionLabel(){ return `v${APP_VERSION}`; }
 /* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
 const CHANGELOG = [
+  ['2026-10-16', [
+    '🍷 Öppen nota: samla en middag eller fest under ett namn och plussa på med ett tryck',
+    'Rödvin, vitvin, glögg m.m. räknas nu som alkohol'
+  ]],
   ['2026-10-13', [
     'Portionsknapparna ändrar även namnet: "40 g chips" blir "80 g chips", annars "2× …"',
     'AI-uppskattningen räknar stekfett bara en gång när smör eller olja står som egen del'
