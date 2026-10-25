@@ -2306,6 +2306,18 @@ function entryEditRow(item, idx, type){
    Färgen visar var maten hamnar, med samma zoner som vecko- och månadsvyn:
    mörkgrönt inom målet, ljusgrönt i träningskalorierna (fortfarande enligt plan),
    guld över planen men under förbrukningen, rött över förbrukningen. */
+/* Jämviktens förbrukning en viss dag: dagens förbrukning skalad efter trendvikten då.
+   Den som vägde 100 kg i juli förbrukade mer än i dag — annars underskattas gamla underskott. */
+function maintenanceAt(dateStr, goal, trend){
+  const base = maintenanceFor(goal);
+  const sug = goalSuggestion();
+  if(!sug || !sug.bmr) return base;
+  const w = trend && trend[dateStr];
+  if(!w) return base;
+  const s = state.settings;
+  const b = calcBMR(w, s.height, s.age, s.sex);
+  return b ? Math.round(base * b / sug.bmr) : base;
+}
 function maintenanceFor(goal){
   const sug = goalSuggestion();
   return (sug && sug.tdee > goal) ? sug.tdee : Math.round(goal * 1.10);
@@ -5112,10 +5124,11 @@ function balanceBlock(results, goal, periodWord){
   // Huvudsiffran räknas mot breakeven (förbrukning + aktivt), precis som på dagsvyn.
   // Det är den som avgör vad vågen gör. Mot planen visas under.
   const maint = maintenanceFor(goal);
+  const trend = weightTrendSeries();
   let run = 0, plan = 0;
   const points = [];
   results.forEach((r, i) => {
-    if(r.totals.intake > 0){ run += (maint - r.totals.net); plan += (goal - r.totals.net); }
+    if(r.totals.intake > 0){ run += (maintenanceAt(ymd(r.date), goal, trend) - r.totals.net); plan += (goal - r.totals.net); }
     points.push({ i, run, logged: r.totals.intake > 0, date: r.date });
   });
   const total = Math.round(run);
@@ -5609,16 +5622,19 @@ function renderYear(content){
   const goal = state.settings.dailyGoal;
 
   const months = [];
+  const trend = weightTrendSeries();
   let totalBalance = 0, totalLogged = 0, netSum = 0, proteinSum = 0, maxAbs = 0;
   for(let m = 0; m < 12; m++){
     const dim = new Date(year, m+1, 0).getDate();
     let balance = 0, logged = 0, net = 0, protein = 0;
     for(let d = 1; d <= dim; d++){
-      const day = state.cache[ymd(new Date(year, m, d))];
+      const key = ymd(new Date(year, m, d));
+      const day = state.cache[key];
       if(!day) continue;
       const t = dayTotals(day);
       if(t.intake <= 0) continue;
-      logged++; balance += goal - t.net; net += t.net; protein += t.protein;
+      // Mot jämvikt: förbrukningen den dagen (efter dåvarande vikt) plus det du rörde dig
+      logged++; balance += maintenanceAt(key, goal, trend) - t.net; net += t.net; protein += t.protein;
     }
     months.push({ month:m, year, balance, logged, avgNet: logged?Math.round(net/logged):0 });
     totalBalance += balance; totalLogged += logged; netSum += net; proteinSum += protein;
@@ -5645,19 +5661,19 @@ function renderYear(content){
       ${totalLogged ? `
         <div class="balancehead">
           <div>
-            <div class="k">Kaloribalans ${year}</div>
+            <div class="k">Mot jämvikt ${year}</div>
             <div class="balanceval" style="color:${deficit?'var(--sage)':'var(--rust)'}">
               ${deficit?'−':'+'}${Math.abs(totalBalance).toLocaleString('sv-SE')} kcal
             </div>
           </div>
           <div style="text-align:right;">
             <div class="k">Motsvarar</div>
-            <div class="v" style="color:${deficit?'var(--sage)':'var(--rust)'}">${deficit?'−':'+'}${kgFromBalance.toFixed(1).replace('.',',')} kg</div>
+            <div class="v" style="color:${deficit?'var(--sage)':'var(--rust)'}">≈ ${deficit?'−':'+'}${kgFromBalance.toFixed(1).replace('.',',')} kg</div>
           </div>
         </div>
         ${monthDiverging(months, maxAbs)}
         <div class="cmp-note" style="margin-top:2px;">
-          Staplar uppåt = underskott, nedåt = överskott. Varje månad räknas bara på de dagar du loggat.
+          Staplar uppåt = under jämvikt (viktnedgång), nedåt = över. Jämvikten följer din vikt, så tidiga månader räknas mot en högre förbrukning. Bara loggade dagar räknas.
         </div>
         <div class="summaryrow">
           <div class="stat"><div class="k">Snitt netto/dag</div><div class="v" style="color:${avgNetColor(avgNet, goal)}">${avgNet}</div></div>
@@ -5670,7 +5686,7 @@ function renderYear(content){
           <div class="stat ${kgChange!==null && kgChange<0?'sage':''}"><div class="k">Vikt i år</div><div class="v">${kgChange!==null?signed(kgChange,1)+' kg':'—'}</div></div>
           <div class="stat"></div>
         </div>
-        ${best && best.balance > 0 ? `<div class="cmp-note">Bästa månaden: <b>${MONTH_SHORT[best.month]}</b> med ${best.balance.toLocaleString('sv-SE')} kcal underskott på ${best.logged} loggade dagar.</div>` : ''}
+        ${best && best.balance > 0 ? `<div class="cmp-note">Bästa månaden: <b>${MONTH_SHORT[best.month]}</b> med ${best.balance.toLocaleString('sv-SE')} kcal under jämvikt på ${best.logged} loggade dagar (≈ ${(best.balance/7700).toFixed(1).replace('.',',')} kg).</div>` : ''}
       ` : `<div class="empty">Inga loggade dagar ${year} än.</div>`}
     </div>
 
