@@ -864,6 +864,10 @@
   .searching .fg-body{display:block; padding:0;}
   .favnohit{display:none; color:var(--muted); font-size:13px; padding:10px 2px;}
   .favgroups.nohit .favnohit{display:block;}
+  .bal-kg{font-size:12.5px; color:var(--muted); margin-top:2px;}
+  .bal-plan{display:flex; justify-content:space-between; gap:10px; align-items:baseline; font-size:13px; color:var(--muted);
+    border-top:1px solid var(--line); padding-top:8px; margin-top:6px;}
+  .bal-plan b{font-size:13.5px; white-space:nowrap;}
   /* Öppen nota */
   body.hasnota #content{padding-bottom:150px;}
   .notacard{position:fixed; left:12px; right:12px; bottom:calc(84px + env(safe-area-inset-bottom)); z-index:21; max-width:496px; margin:0 auto;
@@ -5101,59 +5105,46 @@ function balanceBlock(results, goal, periodWord){
   if(!logged.length){
     return `<div class="compare"><div class="cmp-note">Logga en dag för att se kaloribalansen för ${periodWord}.</div></div>`;
   }
-  // Löpande summa av (mål − netto) för loggade dagar
-  let run = 0;
+  // Huvudsiffran räknas mot breakeven (förbrukning + aktivt), precis som på dagsvyn.
+  // Det är den som avgör vad vågen gör. Mot planen visas under.
+  const maint = maintenanceFor(goal);
+  let run = 0, plan = 0;
   const points = [];
   results.forEach((r, i) => {
-    if(r.totals.intake > 0) run += (goal - r.totals.net);
+    if(r.totals.intake > 0){ run += (maint - r.totals.net); plan += (goal - r.totals.net); }
     points.push({ i, run, logged: r.totals.intake > 0, date: r.date });
   });
-  const total = run;
-  const deficit = total > 0;
-  const avgDev = Math.round(total / logged.length);
+  const total = Math.round(run);
+  const deficit = total >= 0;
+  const avg = Math.round(total / logged.length);
   const kg = Math.abs(total) / 7700;
-
-  // Rött bara när snittet ligger över förbrukningen — över målet men under
-  // den innebär fortfarande viktnedgång och förtjänar inte larmfärg
-  const sugB = goalSuggestion();
-  const avgNetB = Math.round(logged.reduce((a,r)=>a+r.totals.net,0)/logged.length);
-  const balCol = deficit ? 'var(--sage)'
-    : (sugB && avgNetB <= sugB.tdee) ? 'var(--gold)' : 'var(--rust)';
+  const col = deficit ? 'var(--sage)' : 'var(--rust)';
+  const planAhead = plan >= 0;
+  const kgTxt = (kg < 0.05 ? '0' : (Math.round(kg * 10) / 10).toString().replace('.', ','));
 
   return `
     <div class="compare">
       <div class="balancehead">
         <div>
-          <div class="k">Kaloribalans ${periodWord}</div>
-          <div class="balanceval" style="color:${balCol}">
-            ${deficit ? '−' : '+'}${Math.abs(total).toLocaleString('sv-SE')} kcal
+          <div class="k">Mot breakeven ${periodWord}</div>
+          <div class="balanceval" style="color:${col}">
+            ${deficit ? '−' : '+'}${nf(Math.abs(total))} kcal
           </div>
+          <div class="bal-kg">${deficit ? '≈ ' + kgTxt + ' kg ner' : '≈ ' + kgTxt + ' kg upp'}</div>
         </div>
         <div style="text-align:right;">
           <div class="k">Snitt/dag</div>
-          <div class="v" style="color:${balCol}">${avgDev > 0 ? '−' : '+'}${Math.abs(avgDev)}</div>
+          <div class="v" style="color:${col}">${avg >= 0 ? '−' : '+'}${nf(Math.abs(avg))}</div>
         </div>
       </div>
       ${balanceCurve(points, logged.length)}
-      <div class="cmp-note">
-        ${deficit
-          ? `Du ligger ${Math.abs(total).toLocaleString('sv-SE')} kcal under ditt mål — alltså före planen.`
-          : `Du ligger ${Math.abs(total).toLocaleString('sv-SE')} kcal över ditt mål — alltså efter planen.`}
-        Räknas bara på de ${logged.length} dagar du loggat.
+      <div class="bal-plan">
+        <span>Mot planen ${nf(goal)}/dag</span>
+        <b style="color:${planAhead ? 'var(--sage)' : 'var(--gold-ink)'}">${planAhead ? '−' : '+'}${nf(Math.abs(Math.round(plan)))} kcal · ${planAhead ? 'före' : 'efter'} planen</b>
       </div>
-      ${(() => {
-        // Att ligga över målet är inte samma sak som att gå upp i vikt —
-        // målet innehåller redan ett planerat underskott.
-        const sug = goalSuggestion();
-        if(!sug || deficit) return '';
-        const over = logged.filter(r => r.totals.net > sug.tdee).length;
-        const avgNet = Math.round(logged.reduce((a,r)=>a+r.totals.net,0)/logged.length);
-        if(!over)
-          return `<div class="cmp-note zonenote">Men alla ${logged.length} dagarna låg under din förbrukning på ${sug.tdee} kcal — du har gått ned i vikt varje dag, bara långsammare än planerat.</div>`;
-        if(over < logged.length)
-          return `<div class="cmp-note zonenote">${over} av ${logged.length} dagar låg över din förbrukning på ${sug.tdee} kcal. Övriga dagar gav fortfarande viktnedgång. I snitt ligger du på ${avgNet} kcal.</div>`;
-        return `<div class="cmp-note zonenote" style="color:var(--rust);">Samtliga dagar låg över din förbrukning på ${sug.tdee} kcal — här sker en viktuppgång, inte bara en långsammare nedgång.</div>`;
-      })()}
+      <div class="cmp-note">
+        Breakeven = din förbrukning ${nf(maint)} kcal/dag plus det du rört dig. Räknas på de ${logged.length} dagar du loggat.
+      </div>
     </div>`;
 }
 
