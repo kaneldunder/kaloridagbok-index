@@ -959,11 +959,13 @@ window.onerror = function(msg, src, line, col, err){
 
 /* Versionsnummer — ökas med 1 vid varje publicering (och en rad läggs i CHANGELOG).
    Syns i sidhuvudet så att man ser om sidan är cachad. */
-const APP_VERSION = 30;
+const APP_VERSION = 31;
 function versionLabel(){ return `v${APP_VERSION}`; }
 /* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
 const CHANGELOG = [
   ['2026-10-25', [
+    'Årsöversikten visar balansen mot jämvikt och mot planen',
+    'Planen räknas mot det mål som gällde varje dag (målhistorik), jämvikten mot vikten du hade då',
     'Vecka och månad visar balansen mot jämvikt (≈ kg) som huvudsiffra, och planen under',
     '"Breakeven" heter nu "Jämvikt" — nivån där vikten står still'
   ]],
