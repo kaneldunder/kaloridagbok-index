@@ -2306,6 +2306,27 @@ function entryEditRow(item, idx, type){
    Färgen visar var maten hamnar, med samma zoner som vecko- och månadsvyn:
    mörkgrönt inom målet, ljusgrönt i träningskalorierna (fortfarande enligt plan),
    guld över planen men under förbrukningen, rött över förbrukningen. */
+/* Målhistorik: settings.goalHistory = [{from:'YYYY-MM-DD', goal}], så att gamla dagar
+   räknas mot det mål som gällde då. Dagens mål är alltid settings.dailyGoal. */
+function setDailyGoal(n){
+  n = Math.round(Number(n)); if(!(n > 0)) return;
+  const s = state.settings;
+  s.dailyGoal = n;
+  const today = todayYmd();
+  const h = (s.goalHistory || []).filter(x => x.from !== today);
+  if(!h.length || h[h.length - 1].goal !== n) h.push({ from: today, goal: n });
+  h.sort((a, b) => a.from.localeCompare(b.from));
+  s.goalHistory = h;
+}
+function goalAt(dateStr){
+  const s = state.settings;
+  if(!dateStr || dateStr >= todayYmd()) return s.dailyGoal;
+  const h = s.goalHistory || [];
+  let g = null;
+  for(const x of h){ if(x.from <= dateStr) g = x.goal; else break; }
+  if(g === null) g = h.length ? h[0].goal : s.dailyGoal;
+  return g;
+}
 /* Jämviktens förbrukning en viss dag: dagens förbrukning skalad efter trendvikten då.
    Den som vägde 100 kg i juli förbrukade mer än i dag — annars underskattas gamla underskott. */
 function maintenanceAt(dateStr, goal, trend){
@@ -5128,7 +5149,7 @@ function balanceBlock(results, goal, periodWord){
   let run = 0, plan = 0;
   const points = [];
   results.forEach((r, i) => {
-    if(r.totals.intake > 0){ run += (maintenanceAt(ymd(r.date), goal, trend) - r.totals.net); plan += (goal - r.totals.net); }
+    if(r.totals.intake > 0){ run += (maintenanceAt(ymd(r.date), goal, trend) - r.totals.net); plan += (goalAt(ymd(r.date)) - r.totals.net); }
     points.push({ i, run, logged: r.totals.intake > 0, date: r.date });
   });
   const total = Math.round(run);
@@ -5156,7 +5177,7 @@ function balanceBlock(results, goal, periodWord){
       </div>
       ${balanceCurve(points, logged.length)}
       <div class="bal-plan">
-        <span>Mot planen ${nf(goal)}/dag</span>
+        <span>Mot planen ${(() => { const gs = logged.map(r => goalAt(ymd(r.date))); const lo = Math.min(...gs), hi = Math.max(...gs); return lo === hi ? nf(lo) + '/dag' : 'snitt ' + nf(Math.round(gs.reduce((a, b) => a + b, 0) / gs.length)) + '/dag'; })()}</span>
         <b style="color:${planAhead ? 'var(--sage)' : 'var(--gold-ink)'}">${planAhead ? '−' : '+'}${nf(Math.abs(Math.round(plan)))} kcal · ${planAhead ? 'före' : 'efter'} planen</b>
       </div>
       <div class="cmp-note">
@@ -5623,10 +5644,11 @@ function renderYear(content){
 
   const months = [];
   const trend = weightTrendSeries();
-  let totalBalance = 0, totalLogged = 0, netSum = 0, proteinSum = 0, maxAbs = 0;
+  let totalBalance = 0, totalPlan = 0, totalLogged = 0, netSum = 0, proteinSum = 0, maxAbs = 0;
+  const planGoals = [];
   for(let m = 0; m < 12; m++){
     const dim = new Date(year, m+1, 0).getDate();
-    let balance = 0, logged = 0, net = 0, protein = 0;
+    let balance = 0, logged = 0, net = 0, protein = 0, planBal = 0;
     for(let d = 1; d <= dim; d++){
       const key = ymd(new Date(year, m, d));
       const day = state.cache[key];
@@ -5635,8 +5657,10 @@ function renderYear(content){
       if(t.intake <= 0) continue;
       // Mot jämvikt: förbrukningen den dagen (efter dåvarande vikt) plus det du rörde dig
       logged++; balance += maintenanceAt(key, goal, trend) - t.net; net += t.net; protein += t.protein;
+      const gk = goalAt(key); planBal += gk - t.net; planGoals.push(gk);
     }
     months.push({ month:m, year, balance, logged, avgNet: logged?Math.round(net/logged):0 });
+    totalPlan += planBal;
     totalBalance += balance; totalLogged += logged; netSum += net; proteinSum += protein;
     maxAbs = Math.max(maxAbs, Math.abs(balance));
   }
@@ -5672,6 +5696,10 @@ function renderYear(content){
           </div>
         </div>
         ${monthDiverging(months, maxAbs)}
+        <div class="bal-plan">
+          <span>Mot planen ${planGoals.length && Math.min(...planGoals) !== Math.max(...planGoals) ? 'snitt ' + nf(Math.round(planGoals.reduce((a, b) => a + b, 0) / planGoals.length)) : nf(goal)}/dag</span>
+          <b style="color:${totalPlan >= 0 ? 'var(--sage)' : 'var(--gold-ink)'}">${totalPlan >= 0 ? '−' : '+'}${nf(Math.abs(Math.round(totalPlan)))} kcal · ${totalPlan >= 0 ? 'före' : 'efter'} planen</b>
+        </div>
         <div class="cmp-note" style="margin-top:2px;">
           Staplar uppåt = under jämvikt (viktnedgång), nedåt = över. Jämvikten följer din vikt, så tidiga månader räknas mot en högre förbrukning. Bara loggade dagar räknas.
         </div>
@@ -6352,8 +6380,7 @@ function renderSettings(content){
   `;
   document.getElementById('sSave').onclick = async () => {
     const newGoal = Number(document.getElementById('sGoal').value) || state.settings.dailyGoal;
-    if(newGoal !== state.settings.dailyGoal) state.settings.goalSetAtWeight = currentWeightKg();
-    state.settings.dailyGoal = newGoal;
+    if(newGoal !== state.settings.dailyGoal){ state.settings.goalSetAtWeight = currentWeightKg(); setDailyGoal(newGoal); }
     state.settings.startWeight = Number(document.getElementById('sStart').value) || state.settings.startWeight;
     const sd = (document.getElementById('sStartDate') || {}).value || '';
     state.settings.startDate = /^\d{4}-\d{2}-\d{2}$/.test(sd) ? sd : '';
@@ -6380,7 +6407,7 @@ function renderSettings(content){
       state.settings.useMeasured = true;
       state.settings.measuredTdee = m.tdee;
       const r = goalSuggestion();
-      if(r){ state.settings.dailyGoal = r.target; state.settings.goalSetAtWeight = r.weight; }
+      if(r){ setDailyGoal(r.target); state.settings.goalSetAtWeight = r.weight; }
       await ghSaveBundle();
       renderContent();
     };
@@ -6388,7 +6415,7 @@ function renderSettings(content){
     if(useF) useF.onclick = async () => {
       state.settings.useMeasured = false;
       const r = goalSuggestion();
-      if(r){ state.settings.dailyGoal = r.target; state.settings.goalSetAtWeight = r.weight; }
+      if(r){ setDailyGoal(r.target); state.settings.goalSetAtWeight = r.weight; }
       await ghSaveBundle();
       renderContent();
     };
@@ -6396,7 +6423,7 @@ function renderSettings(content){
     if(applyBtn) applyBtn.onclick = async () => {
       const r = goalSuggestion();
       if(!r) return;
-      state.settings.dailyGoal = r.target;
+      setDailyGoal(r.target);
       state.settings.goalSetAtWeight = r.weight;
       await ghSaveBundle();
       renderContent();
