@@ -964,8 +964,8 @@ function versionLabel(){ return `v${APP_VERSION}`; }
 /* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
 const CHANGELOG = [
   ['2026-10-25', [
-    'Vecka och månad visar balansen mot förbrukningen (≈ kg) som huvudsiffra, och planen under',
-    '"Breakeven" heter nu "Förbrukning"'
+    'Vecka och månad visar balansen mot jämvikt (≈ kg) som huvudsiffra, och planen under',
+    '"Breakeven" heter nu "Jämvikt" — nivån där vikten står still'
   ]],
   ['2026-10-16', [
     'Favoriter: sökfält, rad med de mest använda, fällbara grupper efter hur du faktiskt loggat dem',
@@ -2504,9 +2504,9 @@ function breakevenHTML(t, goal){
   const markPct = M / scale * 100;
   const goalPct = Math.min(100, (goal + t.burned) / scale * 100);
   const col = under ? 'var(--sage)' : 'var(--rust)';
-  return `<div class="dh-be" title="Förbrukning ${M} kcal: vardag ${maint}${t.burned ? ' + ' + t.burned + ' aktivt' : ''}${sug && sug.measured ? ' (uppmätt)' : ''}">
+  return `<div class="dh-be" title="Jämvikt ${M} kcal: förbrukning ${maint}${t.burned ? ' + ' + t.burned + ' aktivt' : ''}${sug && sug.measured ? ' (uppmätt)' : ''}">
     <div class="be-top">
-      <span>Förbrukning idag <b>${nf(M)}</b></span>
+      <span>Jämvikt idag <b>${nf(M)}</b></span>
       <span style="color:${col}; font-weight:600;">${under ? nf(left) + ' kcal under' : nf(-left) + ' kcal över'}</span>
     </div>
     <div class="be-bar">
@@ -2514,7 +2514,7 @@ function breakevenHTML(t, goal){
       <i class="be-goal" style="left:${goalPct.toFixed(1)}%"></i>
       <i class="be-mark" style="left:${markPct.toFixed(1)}%"></i>
     </div>
-    <div class="be-sub"><span>ätit ${nf(I)}</span><span>plan ${nf(goal + t.burned)} · förbrukning ${nf(M)}</span></div>
+    <div class="be-sub"><span>ätit ${nf(I)}</span><span>plan ${nf(goal + t.burned)} · jämvikt ${nf(M)}</span></div>
   </div>`;
 }
 
@@ -5130,7 +5130,7 @@ function balanceBlock(results, goal, periodWord){
     <div class="compare">
       <div class="balancehead">
         <div>
-          <div class="k">Mot förbrukningen ${periodWord}</div>
+          <div class="k">Mot jämvikt ${periodWord}</div>
           <div class="balanceval" style="color:${col}">
             ${deficit ? '−' : '+'}${nf(Math.abs(total))} kcal
           </div>
@@ -5147,7 +5147,7 @@ function balanceBlock(results, goal, periodWord){
         <b style="color:${planAhead ? 'var(--sage)' : 'var(--gold-ink)'}">${planAhead ? '−' : '+'}${nf(Math.abs(Math.round(plan)))} kcal · ${planAhead ? 'före' : 'efter'} planen</b>
       </div>
       <div class="cmp-note">
-        Förbrukning = ${nf(maint)} kcal/dag i vardagen plus det du rört dig. Räknas på de ${logged.length} dagar du loggat.
+        Jämvikt = din förbrukning ${nf(maint)} kcal/dag plus det du rört dig. Räknas på de ${logged.length} dagar du loggat.
       </div>
     </div>`;
 }
