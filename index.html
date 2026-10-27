@@ -959,10 +959,13 @@ window.onerror = function(msg, src, line, col, err){
 
 /* Versionsnummer — ökas med 1 vid varje publicering (och en rad läggs i CHANGELOG).
    Syns i sidhuvudet så att man ser om sidan är cachad. */
-const APP_VERSION = 31;
+const APP_VERSION = 32;
 function versionLabel(){ return `v${APP_VERSION}`; }
 /* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
 const CHANGELOG = [
+  ['2026-10-27', [
+    'Rättat: "Uppskatta text" kraschade ("delar.map is not a function") när AI:n svarade med en enda del i stället för en lista'
+  ]],
   ['2026-10-25', [
     'Årsöversikten visar balansen mot jämvikt och mot planen',
     'Planen räknas mot det mål som gällde varje dag (målhistorik), jämvikten mot vikten du hade då',
@@ -3346,7 +3349,7 @@ Svara ENDAST med JSON, ingen markdown:
       const tb = (res.content||[]).find(b => b.type === 'text');
       if(!tb) throw new Error('Tomt svar');
       const parsed = parseAiJson(tb.text);
-      const comps = (parsed.delar||[]).map(partFromAi)
+      const comps = aiDelar(parsed).map(partFromAi)
         .filter(c => c.name && c.amount > 0);
       if(!comps.length) throw new Error('Inga delar hittades');
       const sum = comps.reduce((a,c)=>a+componentKcal(c),0);
@@ -4506,7 +4509,7 @@ Svara ENDAST med JSON, inga förklaringar, ingen markdown:
   const textBlock = (data.content || []).find(b => b.type === 'text');
   if(!textBlock) throw new Error('Tomt svar från modellen');
   const parsed = parseAiJson(textBlock.text);
-  const aiParts = (parsed.delar || []).map(partFromAi)
+  const aiParts = aiDelar(parsed).map(partFromAi)
     .filter(c => c.name && c.amount > 0);
 
   if(!aiParts.length){
@@ -4752,6 +4755,25 @@ function fileToBase64(file){
 
 /* Tolkar AI:ns JSON-svar tåligt: tar bort kodstaket och text runt omkring, och
    klarar ett svar som klippts av mitt i en lista (räddar de delar som hann bli klara). */
+/* AI:n svarar ibland med "delar" som ett enda objekt, en sträng med JSON
+   eller hoppar över omslaget helt när det bara finns en sak ("Kvarg 200 g").
+   Gör alltid om det till en lista. */
+function aiDelar(parsed){
+  let d = parsed && (parsed.delar ?? parsed.parts ?? parsed.del);
+  if(typeof d === 'string'){ try{ d = parseAiJson(d); }catch(e){ d = null; } }
+  if(Array.isArray(d)) return d.filter(x => x && typeof x === 'object');
+  if(d && typeof d === 'object'){
+    if(d.delar != null) return aiDelar(d);
+    const keys = Object.keys(d);
+    if(keys.length && keys.every(k => /^\d+$/.test(k))) return Object.values(d).filter(x => x && typeof x === 'object');
+    return [d];
+  }
+  if(Array.isArray(parsed)) return parsed.filter(x => x && typeof x === 'object');
+  if(parsed && typeof parsed === 'object' && (parsed.name || parsed.namn) &&
+     (parsed.kcalPer100g != null || parsed.kcalPer100 != null)) return [parsed];
+  return [];
+}
+
 function parseAiJson(text){
   let t = String(text || '').replace(/```json|```/g, '').trim();
   const start = t.indexOf('{');
