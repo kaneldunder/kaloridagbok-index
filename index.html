@@ -954,11 +954,12 @@ window.onerror = function(msg, src, line, col, err){
 
 /* Versionsnummer — ökas med 1 vid varje publicering (och en rad läggs i CHANGELOG).
    Syns i sidhuvudet så att man ser om sidan är cachad. */
-const APP_VERSION = 33;
+const APP_VERSION = 34;
 function versionLabel(){ return `v${APP_VERSION}`; }
 /* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
 const CHANGELOG = [
   ['2026-10-27', [
+    'Ätit, Plan och Jämvikt med stor bokstav',
     'Protein visas som gram kvar till målet: rött under, grönt när du nått det',
     'Aktiva kalorier tar mindre plats nu när de hämtas automatiskt från Hälsa'
   ]],
