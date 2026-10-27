@@ -1902,10 +1902,8 @@ function render(){
   renderContent();
 }
 
-/* Hämtar senaste versionen från GitHub och slår ihop med det som finns här.
-   Körs när appen kommer fram på skärmen, så att genvägen (aktiva kalorier)
-   och ändringar från andra enheter syns utan att man trycker ⟳ — och så att
-   en gammal kopia av dagen inte skriver över något nyare när man loggar. */
+/* ⟳: hämtar senaste versionen från GitHub och slår ihop med det som finns här,
+   så att något osparat på telefonen inte försvinner. */
 let refreshing = false, lastRefresh = 0;
 function isEditing(){
   const a = document.activeElement;
@@ -1937,9 +1935,6 @@ async function refreshFromGh({ force = false } = {}){
     if(b){ b.disabled = false; b.textContent = '⟳'; }
   }
 }
-document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') refreshFromGh(); });
-window.addEventListener('pageshow', e => { if(e.persisted) refreshFromGh(); });
-window.addEventListener('focus', () => refreshFromGh());
 
 let renderToken = 0;
 function currentToken(){ return renderToken; }
