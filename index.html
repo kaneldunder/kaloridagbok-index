@@ -75,7 +75,8 @@
   .iconbtn:hover{background:var(--line);}
   .iconbtn.on{background:var(--sage); color:var(--on-accent);}
   .iconbtn:disabled{opacity:.5;}
-  .syncbar{font-size:11.5px; padding:0 4px 12px; min-height:14px;}
+  .syncbar{font-size:11.5px; padding:0 4px 12px;}
+  .syncbar:empty{display:none;}
 
   nav.tabs{
     display:flex; gap:4px; background:var(--card); border:1px solid var(--line);
@@ -1644,12 +1645,12 @@ function noteSync(ok, label){
   if(el) el.innerHTML = syncBannerHTML();
 }
 function syncBannerHTML(){
-  if(!state.lastSync) return '';
+  if(!state.lastSync || state.lastSync.ok) return '';   // allt gick bra — inget att visa
   const { ok, label, time } = state.lastSync;
   const hh = String(time.getHours()).padStart(2,'0');
   const mm = String(time.getMinutes()).padStart(2,'0');
   const ss = String(time.getSeconds()).padStart(2,'0');
-  return `<span style="color:${ok?'var(--sage)':'var(--rust)'}">${ok?'✓':'⚠'} ${label} kl ${hh}:${mm}:${ss}${ok?'':' — sparades EJ till molnet'}</span>`;
+  return `<span style="color:${ok?'var(--sage)':'var(--rust)'}">${ok?'✓':'⚠'} ${label} kl ${hh}:${mm}:${ss}${/spara/i.test(label) ? ' — sparades EJ till molnet' : ''}</span>`;
 }
 
 function b64EncodeUnicode(str){
@@ -1897,19 +1898,48 @@ function render(){
     };
   });
   const refreshBtn = document.getElementById('refreshAll');
-  if(refreshBtn) refreshBtn.onclick = async () => {
-    refreshBtn.disabled = true;
-    refreshBtn.textContent = '…';
-    const bundle = await ghLoadBundle();
-    if(bundle){
-      applyBundle(bundle);
-    }
-    refreshBtn.disabled = false;
-    refreshBtn.textContent = '⟳';
-    renderContent();
-  };
+  if(refreshBtn) refreshBtn.onclick = () => refreshFromGh({ force:true });
   renderContent();
 }
+
+/* Hämtar senaste versionen från GitHub och slår ihop med det som finns här.
+   Körs när appen kommer fram på skärmen, så att genvägen (aktiva kalorier)
+   och ändringar från andra enheter syns utan att man trycker ⟳ — och så att
+   en gammal kopia av dagen inte skriver över något nyare när man loggar. */
+let refreshing = false, lastRefresh = 0;
+function isEditing(){
+  const a = document.activeElement;
+  return !!(state.openForm || state.editingEntry || state.editingTime ||
+    (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)));
+}
+async function refreshFromGh({ force = false } = {}){
+  if(refreshing || !ghConfigured()) return;
+  if(!force && (Date.now() - lastRefresh < 15000 || isEditing())) return;
+  refreshing = true;
+  const btn = document.getElementById('refreshAll');
+  if(btn){ btn.disabled = true; btn.textContent = '…'; }
+  try{
+    const remote = await ghLoadBundle();
+    if(remote){
+      const J = v => JSON.stringify(v);
+      const local = bundleFromState();
+      const hadLocal = state.syncBase && J(local) !== J(state.syncBase);
+      const merged = hadLocal ? mergeBundles(state.syncBase, local, remote) : remote;
+      applyBundle(merged);
+      snapshotSyncBase(remote);
+      if(hadLocal && J(merged) !== J(remote)) await ghSaveBundle();   // osparat här — skicka upp det
+      lastRefresh = Date.now();
+      if(!isEditing()) renderContent();
+    }
+  }finally{
+    refreshing = false;
+    const b = document.getElementById('refreshAll');
+    if(b){ b.disabled = false; b.textContent = '⟳'; }
+  }
+}
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') refreshFromGh(); });
+window.addEventListener('pageshow', e => { if(e.persisted) refreshFromGh(); });
+window.addEventListener('focus', () => refreshFromGh());
 
 let renderToken = 0;
 function currentToken(){ return renderToken; }
@@ -2501,7 +2531,7 @@ function dayHeroHTML(data, t){
   return `
     ${weekStripHTML()}
     <div class="dh-chips">
-      <span class="dh-status" style="color:${sCol}; background:${sBg};"><i></i>${statusLabel}</span>
+      ${statusLabel === 'Proteinet släpar' ? '' : `<span class="dh-status" style="color:${sCol}; background:${sBg};"><i></i>${statusLabel}</span>`}
       <label class="wchip" title="${rate !== null ? 'Trendvikt ' + kgFmt(Math.round(trendNow*10)/10) + ' kg, förändring senaste veckan' : 'Dagens vikt'}"><input type="text" inputmode="decimal" id="weightInput" value="${wVal}" placeholder="—" aria-label="Vikt i kg">kg${
         rate !== null ? ` <span style="color:${rate<=0?'var(--sage)':'var(--rust)'}">${signed(rate,1)}/v</span>`
         : delta !== null ? ` <span style="color:${delta<=0?'var(--sage)':'var(--rust)'}">${signed(delta,1)}</span>` : ''}</label>
@@ -6652,15 +6682,21 @@ function renderSettings(content){
     saveGhConfig();
     ghStatus.textContent = 'Ansluter…';
     const bundle = await ghLoadBundle();
+    let msg;
     if(bundle){
       applyBundle(bundle);
-      ghStatus.innerHTML = '<span style="color:var(--sage)">✓ Anslutet och data hämtad.</span>';
+      lastRefresh = Date.now();
+      msg = '<span style="color:var(--sage)">✓ Anslutet och data hämtad.</span>';
+    } else if(ghConfigured() && state.lastSync && !state.lastSync.ok){
+      msg = `<span style="color:var(--rust)">⚠ ${escapeHtml(state.lastSync.label)}. Kontrollera token, ägare och repo.</span>`;
     } else if(ghConfigured()){
-      ghStatus.innerHTML = '<span style="color:var(--sage)">✓ Anslutet (ingen data i repo ännu — sparas vid första loggning).</span>';
+      msg = '<span style="color:var(--sage)">✓ Anslutet (ingen data i repo ännu — sparas vid första loggning).</span>';
     } else {
-      ghStatus.innerHTML = '<span style="color:var(--rust)">Fyll i alla fält.</span>';
+      msg = '<span style="color:var(--rust)">Fyll i alla fält.</span>';
     }
-    renderContent();
+    await renderContent();
+    const st = document.getElementById('ghStatus');   // sidan ritades om — skriv in svaret igen
+    if(st) st.innerHTML = msg;
   };
 
   const aiKeyStatus = document.getElementById('aiKeyStatus');
@@ -6720,6 +6756,7 @@ async function init(){
     const bundle = await ghLoadBundle();
     if(bundle){
       applyBundle(bundle);
+      lastRefresh = Date.now();
     }
   }
   render();
