@@ -742,33 +742,25 @@
   .dh-note{text-align:center; font-size:13px; color:var(--muted); margin:5px 0 12px; line-height:1.4;}
 
   .dh-row{display:flex; gap:8px; margin-bottom:6px;}
-  .dh-active{
-    flex:1; min-width:0; background:var(--card); border-radius:16px; padding:8px 11px; cursor:text;
-    display:flex; flex-direction:column; justify-content:center; gap:1px;
+  .dh-active, .dh-prot{
+    flex:1; min-width:0; background:var(--card); border-radius:14px; padding:9px 14px;
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
   }
-  .dh-active small{display:flex; align-items:center; gap:4px; font-size:11px; color:var(--muted);}
+  .dh-active{cursor:text;}
+  .dh-active small, .dh-prot small{display:flex; align-items:center; gap:5px; font-size:13px; color:var(--muted);}
   .dh-active small svg{color:var(--gold); flex-shrink:0;}
-  .dh-active small em{font-style:normal; font-size:9.5px; letter-spacing:.04em; text-transform:uppercase;
-    color:var(--on-accent); background:var(--sage); border-radius:4px; padding:0 4px; margin-left:auto;}
   .dh-active .val{display:flex; align-items:baseline; gap:3px;}
   .dh-active input{
-    min-width:1.4ch; max-width:4.6ch; border:none; background:transparent; padding:0; border-radius:0;
-    font-family:inherit; font-size:17px; font-weight:700; color:var(--ink); line-height:1.2;
+    min-width:1.4ch; max-width:4.6ch; border:none; background:transparent; padding:0; border-radius:0; text-align:right;
+    font-family:inherit; font-size:16px; font-weight:700; color:var(--ink); line-height:1.2;
   }
-  .dh-active .of{font-size:11px; color:var(--muted);}
   .dh-active .val span{font-size:11px; color:var(--muted);}
   .dh-active input:focus{outline:none;}
   .dh-active:focus-within{box-shadow:0 0 0 1.5px var(--gold) inset;}
-  .dh-prot{
-    flex:1; min-width:0; background:var(--card); border-radius:16px; padding:8px 12px;
-    display:flex; flex-direction:column; justify-content:center; gap:1px;
-  }
-  .dh-prot small{font-size:11px; color:var(--muted);}
-  .dh-prot b{font-size:17px; font-weight:700; line-height:1.2;}
+  .dh-prot b{font-size:16px; font-weight:700; line-height:1.2; white-space:nowrap;}
   .dh-prot b.low{color:#F2A08A;}
   .dh-prot b.ok{color:#9BE8B4;}
   .dh-prot b em{font-style:normal; font-weight:500; font-size:12px;}
-  .dh-prot .of{font-size:11px; color:var(--muted);}
 
   .mealsum{
     width:100%; display:flex; align-items:center; gap:10px; margin:6px 0 0; padding:12px 14px;
@@ -2518,15 +2510,13 @@ function dayHeroHTML(data, t){
     <div class="dh-legend">${leg.map(([k,l]) => `<span><i style="background:${ZONE_COL[k]};${k==='goal'?' box-shadow:0 0 0 1px #8FC7BD;':''}"></i>${l}</span>`).join('')}</div>
     <div class="dh-note">${note}</div>
     <div class="dh-row">
-      ${mt ? `<div class="dh-prot">
+      ${mt ? `<div class="dh-prot" title="${Math.round(t.protein)} av ${mt.protein} g protein">
         <small>Protein</small>
         <b class="${protLeft >= 0 ? 'ok' : 'low'}">${protLeft >= 0 ? (protLeft > 0 ? '+' : '') + protLeft : '−' + Math.abs(protLeft)}<em> g</em></b>
-        <span class="of">${Math.round(t.protein)} av ${mt.protein} g</span>
       </div>` : ''}
-      ${baseline ? `<label class="dh-active">
+      ${baseline ? `<label class="dh-active" title="${activeEntry && activeEntry.source === 'genväg' ? 'Hämtat automatiskt från Hälsa' : 'Aktiva kalorier'}">
         <small><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>Aktiva</small>
         <span class="val"><input type="text" inputmode="numeric" id="activeInput" value="${activeVal}" placeholder="0" aria-label="Aktiva kalorier" style="width:${Math.max(1,String(activeVal).length)+0.1}ch"><span>kcal</span></span>
-        <span class="of">${activeEntry && activeEntry.source === 'genväg' ? 'från Hälsa' : activeEntry ? 'inmatat' : 'tryck för att ange'}</span>
       </label>` : ''}
     </div>
     ${breakevenHTML(t, goal)}`;
