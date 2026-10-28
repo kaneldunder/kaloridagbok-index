@@ -1121,7 +1121,8 @@ const LOOKUP_STOPWORDS = new Set([
   'med','och','samt','en','ett','lite','till','av','på','i','plus','extra','ca','cirka'
 ]);
 function nameWords(s){
-  return normName(s).split(/[^a-zA-ZåäöÅÄÖ0-9]+/).filter(Boolean);
+  // "Roast n' Toast" = "roast and toast" = "roast & toast": bindeorden räknas inte
+  return normName(s).split(/[^a-zA-ZåäöÅÄÖ0-9]+/).filter(w => w && w !== 'n' && w !== 'and');
 }
 /* Sant bara när alla sökord finns som HELA ord i rad i namnet.
    "ost" matchar alltså inte "majskakor med ostsmak". */
@@ -1195,8 +1196,14 @@ async function savePantryItem(row){
 /* Sorterad lista: senast använda först, sedan alfabetiskt. */
 /* Läser ut mängd ur fritext: "40 g gurka", "2 ägg", "1,5 dl grädde".
    Returnerar null om ingen mängd hittas. */
+const NUMBER_WORDS = { 'en':1, 'ett':1, 'två':2, 'tre':3, 'fyra':4, 'fem':5, 'sex':6, 'sju':7, 'åtta':8, 'nio':9, 'tio':10, 'en halv':0.5, 'ett halvt':0.5, 'halv':0.5, 'halvt':0.5, 'en och en halv':1.5 };
+/* "två skivor rostbröd" → "2 skivor rostbröd" */
+function numberWordsToDigits(text){
+  return (text || '').replace(/^\s*(en och en halv|en halv|ett halvt|halvt?|en|ett|två|tre|fyra|fem|sex|sju|åtta|nio|tio)\s+(?=\S)/i,
+    (m, w) => NUMBER_WORDS[w.toLowerCase()] + ' ');
+}
 function parseAmountFromName(text){
-  const t = (text || '').trim();
+  const t = numberWordsToDigits(text).trim();
   if(!t) return null;
   const m = t.match(/^(\d+(?:[.,]\d+)?)\s*(kg|hg|gram|gr|g|st|stycken|styck|dl|cl|ml|l|msk|tsk|kkp|kopp|skiva|skivor|näve|nävar)?\b\s*(.*)$/i);
   if(!m) return null;
@@ -1254,15 +1261,22 @@ function entryCoversText(text, entry){
   return contentWords(text).every(w => have.has(w));
 }
 
+/* Mängden i bibliotekets enhet. Skriver man gram på en styckvara
+   ("80 g rostbröd") räknas det om med styckvikten om den är känd. */
+function amountForEntry(q, entry){
+  const unit = entry.unit;
+  if(q && ((q.unit === 'st') === (unit === 'st'))) return q.amount;
+  const gps = Number(entry.gramPerSt);
+  if(q && q.unit === 'g' && unit === 'st' && gps > 0 && q.exact)
+    return Math.round(q.amount / gps * 10) / 10;
+  return Number(entry.portion) || (unit === 'st' ? 1 : 100);
+}
 function lookupPart(part){
   const q = parseQuantityAnywhere(part);
   const entry = findInPantry(q ? q.name : part) || findInPantry(part);
   if(!entry) return null;
   const unit = entry.unit;
-  const amount = (q && ((q.unit === 'st') === (unit === 'st')))
-    ? q.amount
-    : (Number(entry.portion) || (unit === 'st' ? 1 : 100));
-  return { entry, amount, unit };
+  return { entry, amount: amountForEntry(q, entry), unit };
 }
 
 function pantryPartialLookup(text){
@@ -1313,11 +1327,7 @@ function pantryLookupFromText(text){
     const nameGuess = q ? q.name : part;
     const entry = findInPantry(nameGuess) || findInPantry(part);
     if(!entry) return null;   // okänd del → låt AI:n ta hela texten
-    const unit = entry.unit;
-    let amount;
-    if(q && ((q.unit === 'st') === (unit === 'st'))) amount = q.amount;
-    else amount = Number(entry.portion) || (unit === 'st' ? 1 : 100);
-    items.push({ entry, amount, unit });
+    items.push({ entry, amount: amountForEntry(q, entry), unit: entry.unit });
   }
   // Kräv att minst en del hittades och att de kända delarna är meningsfulla
   if(!items.length) return null;
