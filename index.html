@@ -955,10 +955,17 @@ window.onerror = function(msg, src, line, col, err){
 
 /* Versionsnummer — ökas med 1 vid varje publicering (och en rad läggs i CHANGELOG).
    Syns i sidhuvudet så att man ser om sidan är cachad. */
-const APP_VERSION = 34;
+const APP_VERSION = 35;
 function versionLabel(){ return `v${APP_VERSION}`; }
 /* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
 const CHANGELOG = [
+  ['2026-10-28', [
+    'Förstår "en/två skivor", "roast and toast" och gram på styckvaror med känd styckvikt (80 g rostbröd = 2 skivor)',
+    'Synkraden högst upp syns bara när något gått fel',
+    '"Proteinet släpar" visas inte längre — proteinraden säger det redan',
+    'Inställningar visar felet i stället för "✓ Anslutet" när GitHub-kopplingen misslyckas',
+    '⟳ slår ihop med osparade ändringar i stället för att skriva över dem'
+  ]],
   ['2026-10-27', [
     'Ätit, Plan och Jämvikt med stor bokstav',
     'Protein visas som gram kvar till målet: rött under, grönt när du nått det',
