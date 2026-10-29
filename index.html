@@ -1195,7 +1195,19 @@ function findInPantry(name, unit){
   const contained = state.pantry.find(p =>
     nameWords(p.name).length >= 2 && wordRunMatch(term, p.name) && byUnit(p))
     || state.pantry.find(p => nameWords(p.name).length >= 2 && wordRunMatch(term, p.name));
-  return contained || null;
+  if(contained) return contained;
+
+  // 4. Samma ord i annan ordning, eller ihopskrivet
+  //    ("sia salt karamell", "saltkaramell sia" → "Salt karamell, SIA Glass").
+  //    Kräver minst två ord så att ett ensamt ord inte träffar fel.
+  const qWords = term.split(' ').filter(w => w.length >= 3);
+  if(qWords.length >= 2){
+    const compact = s => nameWords(s).join('');
+    const hit = state.pantry.filter(p => qWords.every(w => compact(p.name).includes(w)))
+      .sort((a,b) => nameWords(a.name).length - nameWords(b.name).length)[0];
+    if(hit) return hit;
+  }
+  return null;
 }
 function pantryHasExact(row){
   const p = findInPantry(row.name, row.unit);
@@ -1372,7 +1384,14 @@ function pantryLookupFromText(text){
 function pantrySorted(query){
   const q = normName(query || '');
   return state.pantry
-    .filter(p => !q || normName(p.name).includes(q))
+    .filter(p => {
+      if(!q) return true;
+      const n = normName(p.name);
+      if(n.includes(q)) return true;
+      // alla sökord, i valfri ordning ("sia salt karamell")
+      const words = q.split(/\s+/).filter(Boolean);
+      return words.length > 1 && words.every(w => n.includes(w));
+    })
     .sort((a,b) => (b.lastUsed||0) - (a.lastUsed||0) || a.name.localeCompare(b.name,'sv'));
 }
 function pantryPortionKcal(p){
@@ -3868,6 +3887,12 @@ Svara ENDAST med JSON, ingen markdown:
   if(bmn) bmn.addEventListener('input', () => { state.buildName = bmn.value; });
   const fNameEl = document.getElementById('fName');
   if(fNameEl) fNameEl.addEventListener('input', () => { state.quickName = fNameEl.value; state.quickNameAuto = false; });
+  // Enter i namnfältet = Uppskatta text (som knappen)
+  if(fNameEl) fNameEl.addEventListener('keydown', e => {
+    if(e.key !== 'Enter' || e.isComposing || e.shiftKey) return;
+    e.preventDefault();
+    if(fNameEl.value.trim() && document.getElementById('quickEstBtn')){ fNameEl.blur(); estimateQuickMeal(); }
+  });
   const buildLabelBtn = document.getElementById('buildLabelBtn');
   const buildLabelInput = document.getElementById('buildLabelInput');
   if(buildLabelBtn && buildLabelInput){
@@ -4419,7 +4444,7 @@ function quickFoodForm(){
   const v = (k) => qt ? (k === 'kcal' ? Math.round(qt.kcal) : Math.round(qt[k] * 10) / 10)
     : (ed && ed[k] !== undefined ? ed[k] : '');
   return `
-    <div class="row"><input id="fName" placeholder="Vad åt du? (valfritt om du valt måltidstyp)" value="${escapeHtml(state.quickName != null ? state.quickName : (ed ? ed.name : ''))}"></div>
+    <div class="row"><input id="fName" enterkeyhint="send" placeholder="Vad åt du? (valfritt om du valt måltidstyp)" value="${escapeHtml(state.quickName != null ? state.quickName : (ed ? ed.name : ''))}"></div>
     <div class="mealtypes">
       <div class="mtrow">${MEAL_TYPES.slice(0,3).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}</div>
       <div class="mtrow">${MEAL_TYPES.slice(3,5).map(m => `<button type="button" class="mtbtn ${state.mealType===m.key?'active':''}" data-mt="${m.key}">${m.label}</button>`).join('')}
