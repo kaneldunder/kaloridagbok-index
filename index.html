@@ -970,11 +970,13 @@ window.onerror = function(msg, src, line, col, err){
 
 /* Versionsnummer — ökas med 1 vid varje publicering (och en rad läggs i CHANGELOG).
    Syns i sidhuvudet så att man ser om sidan är cachad. */
-const APP_VERSION = 37;
+const APP_VERSION = 38;
 function versionLabel(){ return `v${APP_VERSION}`; }
 /* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
 const CHANGELOG = [
   ['2026-10-29', [
+    'Biblioteket hittar varor med orden i valfri ordning ("sia salt karamell")',
+    'Enter i namnfältet gör samma sak som Uppskatta text',
     'Äldre poster i fritext är uppdelade per mattyp, så att cirkeldiagrammet stämmer även för all data',
     'Statistik: cirkeldiagram över vad du äter (mattyper) och hur kalorierna fördelas mellan måltiderna'
   ]],
