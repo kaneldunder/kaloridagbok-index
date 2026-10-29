@@ -970,10 +970,13 @@ window.onerror = function(msg, src, line, col, err){
 
 /* Versionsnummer — ökas med 1 vid varje publicering (och en rad läggs i CHANGELOG).
    Syns i sidhuvudet så att man ser om sidan är cachad. */
-const APP_VERSION = 35;
+const APP_VERSION = 36;
 function versionLabel(){ return `v${APP_VERSION}`; }
 /* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
 const CHANGELOG = [
+  ['2026-10-29', [
+    'Statistik: cirkeldiagram över vad du äter (mattyper) och hur kalorierna fördelas mellan måltiderna'
+  ]],
   ['2026-10-28', [
     'Förstår "en/två skivor", "roast and toast" och gram på styckvaror med känd styckvikt (80 g rostbröd = 2 skivor)',
     'Synkraden högst upp syns bara när något gått fel',
