@@ -5956,6 +5956,12 @@ function entryCategoryKcal(f){
   const kc = Number(f.kcal) || 0, out = {};
   const add = (k, v) => { if(v > 0) out[k] = (out[k] || 0) + v; };
   if(kc <= 0) return out;
+  const hasParts = f.components && f.components.length;
+  // Äldre fritextposter som delats upp i efterhand: andel per kategori
+  if(!hasParts && f.catShare && typeof f.catShare === 'object'){
+    Object.entries(f.catShare).forEach(([k, v]) => add(FOOD_CAT_COLORS[k] ? k : 'blandat', (Number(v) || 0) * kc));
+    return out;
+  }
   if(isAlcoholEntry(f)){ add('alkohol', kc); return out; }
   if(f.components && f.components.length){
     const per = f.components.map(c => [foodCategory(c.label || c.name) || foodCategory(c.name) || 'blandat', componentKcal(c)]);
