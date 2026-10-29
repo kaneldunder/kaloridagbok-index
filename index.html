@@ -75,6 +75,21 @@
   .iconbtn:hover{background:var(--line);}
   .iconbtn.on{background:var(--sage); color:var(--on-accent);}
   .iconbtn:disabled{opacity:.5;}
+
+  .donutrow{display:flex; align-items:center; gap:12px;}
+  .donutwrap{position:relative; flex-shrink:0; width:136px; height:136px;}
+  .donutwrap svg{display:block;}
+  .donutc{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; color:var(--plate-ink); pointer-events:none;}
+  .donutc b{font-family:'Fraunces',Georgia,serif; font-size:22px; line-height:1;}
+  .donutc span{font-size:10.5px; color:#3F6F69; margin-top:2px;}
+  .donutleg{flex:1; min-width:0; display:flex; flex-direction:column; gap:5px;}
+  .dl{display:flex; align-items:center; gap:7px; font-size:12.5px;}
+  .dl i{width:10px; height:10px; border-radius:3px; flex-shrink:0;}
+  .dl-n{flex:1; min-width:0; line-height:1.2;}
+  .dl-v{display:flex; flex-direction:column; align-items:flex-end; line-height:1.1;}
+  .dl-v b{font-size:12.5px;}
+  .dl-v em{font-style:normal; font-size:10.5px; color:var(--muted);}
+  @media (max-width:360px){ .donutrow{flex-direction:column;} .donutleg{width:100%;} }
   .syncbar{font-size:11.5px; padding:0 4px 12px;}
   .syncbar:empty{display:none;}
 
@@ -5897,6 +5912,98 @@ function weightSvg(ws){
 }
 
 /* ---------- STATISTIK ---------- */
+
+/* ---------- Mattyper (statistik) ----------
+   Varje del sorteras in i en grov kategori med nyckelord. Poster med delar
+   delas exakt; fritext utan delar delas på "med", "och", komma — hamnar
+   delarna i olika kategorier fördelas det som finns i biblioteket, resten
+   räknas som "Blandade rätter". */
+const FOOD_CATS = [
+  { key:'kott',     label:'Kött, fisk & ägg' },
+  { key:'mejeri',   label:'Mejeri & ost' },
+  { key:'spannmal', label:'Bröd, pasta & potatis' },
+  { key:'gronsak',  label:'Grönsaker & baljväxter' },
+  { key:'frukt',    label:'Frukt & bär' },
+  { key:'fett',     label:'Fett & såser' },
+  { key:'sott',     label:'Sött & snacks' },
+  { key:'alkohol',  label:'Alkohol' },
+];
+const FOOD_RULES = [
+  ['alkohol', /(^|[^a-zåäö])(öl|starköl|mellanöl|vin|rödvin|vitt?vin|rosé|bubbel|glögg|snaps|grogg|drink|cocktail|cider|negroni|gt|spritz|caipirinha|cahiprinha|mojito|margarita|mellerud|bourgogne|chablis|riesling|bourbon|champagne|chsmpagne|cava|crémant|prosecco|whisky|whiskey|vodka|gin|rom|calvados|cognac|aperol|sprit)([^a-zåäö]|$)/],
+  ['spannmal', /majskak|riskak|knäcke|rågrut|rostbröd|roast n|kanelknäcke/],
+  ['sott',     /glass|gelato|zoo\b|malaco|smash|mandlar|mandel|biskvi|princess|ahlgrens|bilar\b|kexchoklad|twix|bounty|kitkat|magnum|cake|cheesecake|paj\b|pajer|muffin|brownie|cookie|mördeg|tartin|maräng|krabbelur|brioche|bakelse|semla|chokladboll|praline|godis|choklad|snickers|daim|marabou|oreo|kex|kaka|kakor|bulle|bullar|tårta|tiramisu|mazarin|munk|wienerbröd|kanelbulle|chips|popcorn|nötter|nötmix|jordnöt|cashew(?!.*granola)|sylt|honung|socker|sirap|barebell|proteinbar|godsak|lakrits|karamell|marshmallow|smoothie|saft|läsk|cola|juice/],
+  ['frukt',    /frukt|äpple|banan|nektarin|persika|blåbär|hallon|jordgubb|lingon|björnbär|vinbär|melon|mango|apelsin|clementin|mandarin|päron|kiwi|druv|plommon|ananas|pink lady|citron|russin|dadl|fikon|granatäpple|bär\b/],
+  ['kott',     /kött|kyckling|piggvar|hälleflundra|gös|abborre|röding|rödspätta|pancetta|rostbiff|fläsk|skinka|kalkon|korv|bacon|färs|biff|lamm|kalv|entrecote|oxfilé|ryggbiff|lax|fisk|sej|torsk|tonfisk|räk|ägg|pastej|salami|chorizo|prosciutto|hamburgare|köttbull|pytt|kebab|sill|makrill|kotlett|lever|anka|älg|rådjur|pulled|carpaccio|bresaola|kräft|musslor|bläckfisk|hummer|krabba|tofu|quorn|falafel/],
+  ['spannmal', /bröd|focaccia|krutong|grissini|krisp|gröt|fralla|frallor|tortilla|pasta|spaghetti|makaron|nudlar|\bris\b|ris,|ris\)|kokt ris|risotto|couscous|bulgur|tabbouleh|taboulleh|quinoa|potatis|pommes|gryn|havre|müsli|granola|flingor|mjöl|bun\b|pizza|pannkak|våffl|gnocchi|lasagne|wrap|pita|baguette|ciabatta|croissant|scones|polenta/],
+  ['fett',     /smör|bregott|flora|olja|majonnäs|aioli|dressing|sås|bearnaise|senap|ketchup|pesto|remoulad/],
+  ['mejeri',   /yoghurt|gräddfil|kvarg|keso|(^|[^a-zåäö])ost|ost([^a-zåäö]|$)|getost|fetaost|grevé|herrgård|präst|philadelphia|parmesan|burrata|mozzarella|mjölk|grädde|crème|creme|fraiche|fraîche|tzatziki|smetana|halloumi|brie|chèvre|cottage|skyr|ricotta|mascarpone|cheddar/],
+  ['gronsak',  /grönsak|sallad|gurka|tomat|paprika|broccoli|blomkål|morot|morötter|lök|majs|ärt|böna|bönor|linse?r?|kikärt|hummus|humus|edamame|avokado|spenat|haricot|zucchini|squash|svamp|champinjon|kantarell|kål|rödbet|sparris|cornichon|oliv(?!olja)|purjo|selleri|rädis|pumpa|aubergine|ruccola|rucola|sockerärt|soppa|gazpacho|grönt/],
+];
+function foodCategory(name){
+  const n = String(name||'').toLowerCase();
+  for(const [k, re] of FOOD_RULES) if(re.test(n)) return k;
+  return null;
+}
+
+const FOOD_CAT_COLORS = { kott:'#e34948', mejeri:'#2a78d6', spannmal:'#eb6834', gronsak:'#008300', frukt:'#1baf7a', fett:'#eda100', sott:'#e87ba4', alkohol:'#6250d6', blandat:'#a9a49a' };
+function splitFoodText(s){
+  return String(s||'').split(/\s*(?:,|\.\s|\boch\b|\bmed\b|\bsamt\b|\+|&|;)\s*/i).map(x => x.trim()).filter(Boolean);
+}
+function entryCategoryKcal(f){
+  const kc = Number(f.kcal) || 0, out = {};
+  const add = (k, v) => { if(v > 0) out[k] = (out[k] || 0) + v; };
+  if(kc <= 0) return out;
+  if(isAlcoholEntry(f)){ add('alkohol', kc); return out; }
+  if(f.components && f.components.length){
+    const per = f.components.map(c => [foodCategory(c.label || c.name) || foodCategory(c.name) || 'blandat', componentKcal(c)]);
+    const sum = per.reduce((a, x) => a + x[1], 0);
+    if(sum > 0){ per.forEach(([k, v]) => add(k, v / sum * kc)); return out; }
+  }
+  const cats = [...new Set(splitFoodText(f.name).map(foodCategory).filter(Boolean))];
+  if(cats.length === 1){ add(cats[0], kc); return out; }
+  if(cats.length > 1){
+    const hit = pantryPartialLookup(f.name);
+    let known = 0;
+    if(hit) hit.known.forEach(it => {
+      const k = foodCategory(it.entry.name); if(!k) return;
+      const fct = it.unit === 'st' ? it.amount : it.amount / 100;
+      const v = Math.min(kc - known, fct * (Number(it.entry.kcalPer100) || 0));
+      add(k, v); known += Math.max(0, v);
+    });
+    add('blandat', kc - known);
+    return out;
+  }
+  add('blandat', kc);
+  return out;
+}
+/* Ring med 2 px mellanrum mellan bitarna, på samma ljusa tallrik som dagvyn. */
+function donutSVG(parts, size = 136){
+  const total = parts.reduce((a, p) => a + p.value, 0) || 1;
+  const w = 20, r = size / 2, R = r - 3 - w / 2, C = 2 * Math.PI * R;
+  const gap = parts.length > 1 ? 2.5 : 0;
+  let acc = 0;
+  const segs = parts.map(p => {
+    const len = p.value / total * C;
+    const dash = Math.max(0.01, len - gap);
+    const el = `<circle cx="${r}" cy="${r}" r="${R}" fill="none" stroke="${p.color}" stroke-width="${w}"
+      stroke-dasharray="${dash.toFixed(2)} ${(C - dash).toFixed(2)}" stroke-dashoffset="${(-acc).toFixed(2)}"
+      transform="rotate(-90 ${r} ${r})"><title>${p.label}: ${Math.round(p.value / total * 100)} %</title></circle>`;
+    acc += len;
+    return el;
+  }).join('');
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img" aria-label="${parts.map(p => p.label + ' ' + Math.round(p.value / total * 100) + ' %').join(', ')}">
+    <circle cx="${r}" cy="${r}" r="${r}" fill="#F6F0E4"/>${segs}</svg>`;
+}
+function donutBlock(parts, perDay, center){
+  const total = parts.reduce((a, p) => a + p.value, 0) || 1;
+  return `<div class="donutrow">
+    <div class="donutwrap">${donutSVG(parts)}${center ? `<div class="donutc">${center}</div>` : ''}</div>
+    <div class="donutleg">${parts.map(p => `
+      <div class="dl"><i style="background:${p.color}"></i><span class="dl-n">${p.label}</span>
+        <span class="dl-v"><b>${p.value / total < 0.005 ? '<1' : Math.round(p.value / total * 100)} %</b><em>${nf(p.value / perDay)} kcal</em></span></div>`).join('')}
+    </div></div>`;
+}
+
 const STAT_KINDS = [
   { key:'frukost',   label:'Frukost' },
   { key:'lunch',     label:'Lunch' },
@@ -6039,6 +6146,20 @@ function renderStats(content){
   const maxKind = Math.max(1, ...shownKinds.map(k => k.kcal / k.days));
   const protDays = mt ? days.filter(x => x.t.protein >= mt.protein).length : 0;
 
+  // --- Mattyper och måltider som andelar
+  const catTot = {};
+  days.forEach(x => x.d.food.forEach(f => {
+    Object.entries(entryCategoryKcal(f)).forEach(([k, v]) => { catTot[k] = (catTot[k] || 0) + v; });
+  }));
+  const catParts = [...FOOD_CATS, { key:'blandat', label:'Blandade rätter' }]
+    .filter(c => (catTot[c.key] || 0) > 0)
+    .map(c => ({ label: c.label, value: catTot[c.key], color: FOOD_CAT_COLORS[c.key] }));
+  const blandatShare = totalIntake ? (catTot.blandat || 0) / totalIntake : 0;
+  const MEAL_RAMP = { frukost:'#64B5A8', lunch:'#43978B', mellanmal:'#2B786E', middag:'#1B5A52', snack:'#0F3A35', alkohol:'#6250d6' };
+  const mealParts = ['frukost','lunch','mellanmal','middag','snack','alkohol']
+    .map(k => kindByKey[k]).filter(k => k && k.kcal > 0)
+    .map(k => ({ label: k.label, value: k.kcal, color: MEAL_RAMP[k.key] }));
+
   // --- Topp 5
   const norm = v => String(v||'').trim().toLowerCase().replace(/\s+/g,' ');
   const groups = {};
@@ -6114,8 +6235,16 @@ function renderStats(content){
       ${best ? `<div class="cmp-note">Bästa veckan: <b>vecka ${weekNumber(best.mon)}</b> med i snitt ${nf(best.def/best.n)} kcal under förbrukningen per dag (≈ ${kgFmt((best.def/7700).toFixed(1))} kg på veckan).</div>` : ''}
     </div>
 
+    <div class="sectitle">Vad du äter</div>
+    <div class="card">
+      ${donutBlock(catParts, n, `<b>${nf(avgIntake)}</b><span>kcal/dag</span>`)}
+      <div class="cmp-note" style="margin-top:10px;">Andel av kalorierna per typ av mat. Kcal i förklaringen är snitt per loggad dag.${blandatShare >= 0.03 ? ` ${pct(blandatShare)} är fritext med flera sorters mat som inte kunnat delas upp (Blandade rätter) — poster loggade med delar sorteras exakt.` : ''}</div>
+    </div>
+
     <div class="sectitle">Dina måltider</div>
     <div class="card">
+      ${donutBlock(mealParts, n, `<b>${nf(avgIntake)}</b><span>kcal/dag</span>`)}
+      <div style="height:10px"></div>
       ${shownKinds.map(k => `
         <div class="strow">
           <div class="strow-top"><b>${k.label}</b><span><b>${nf(k.kcal/k.days)}</b> kcal · ${nf(k.prot/k.days)} g protein</span></div>
