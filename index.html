@@ -970,10 +970,13 @@ window.onerror = function(msg, src, line, col, err){
 
 /* Versionsnummer — ökas med 1 vid varje publicering (och en rad läggs i CHANGELOG).
    Syns i sidhuvudet så att man ser om sidan är cachad. */
-const APP_VERSION = 38;
+const APP_VERSION = 39;
 function versionLabel(){ return `v${APP_VERSION}`; }
 /* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
 const CHANGELOG = [
+  ['2026-11-08', [
+    '"Över målet" heter nu "Över jämvikt" — samma ord i status, förklaring och text'
+  ]],
   ['2026-10-29', [
     'Biblioteket hittar varor med orden i valfri ordning ("sia salt karamell")',
     'Enter i namnfältet gör samma sak som Uppskatta text',
