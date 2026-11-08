@@ -814,6 +814,24 @@
   .stcmp .k{font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;}
   .stcmp .v{font-size:19px; font-weight:600; margin-top:3px;}
   .stline{font-size:11.5px; color:var(--muted); margin-top:4px; line-height:1.4;}
+  .bb{background:var(--card); border-radius:18px; padding:14px 14px 12px; margin:2px 0 10px;}
+  .bb-big{font-family:'Fraunces',Georgia,serif; font-size:40px; line-height:1.02; font-weight:600;}
+  .bb-big small{font-family:'Manrope',system-ui,sans-serif; font-size:15px; font-weight:600; color:var(--muted); margin-left:7px;}
+  .bb-sub{font-size:13px; color:var(--muted); margin-top:3px;}
+  .bb-bar{position:relative; height:30px; margin:30px 0 30px; border-radius:9px; background:rgba(0,0,0,.18);}
+  .bb-z{position:absolute; top:0; bottom:0;}
+  .bb-fill{position:absolute; top:5px; bottom:5px; left:0; display:flex; gap:2px; border-radius:6px; overflow:hidden;}
+  .bb-fill i{display:block; height:100%; min-width:2px;}
+  .bb-mk{position:absolute; top:-4px; bottom:-4px; width:0; border-left:2px solid var(--ink);}
+  .bb-mk span{position:absolute; white-space:nowrap; font-size:11.5px; font-weight:700; color:var(--ink); transform:translateX(-50%);}
+  .bb-mk span.right{transform:translateX(calc(-100% + 2px));} .bb-mk span.left{transform:translateX(-2px);}
+  .bb-mk .t{bottom:calc(100% + 3px);} .bb-mk .b{top:calc(100% + 3px);}
+  .bb-leg{display:flex; flex-wrap:wrap; gap:4px 12px; font-size:12px; color:var(--muted);}
+  .bb-leg b{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; vertical-align:-1px;}
+  .wkb{background:var(--card); border-radius:16px; padding:11px 14px 10px; margin:2px 0 4px;}
+  .wkb-top{display:flex; justify-content:space-between; align-items:baseline; font-size:13px; color:var(--muted); margin-bottom:4px;}
+  .wkb-top b{font-size:14px;}
+  .wkb-sub{font-size:11px; color:var(--muted); margin-top:2px;}
   .dh-be{background:var(--card); border-radius:16px; padding:10px 14px 9px; margin:2px 0 4px;}
   .be-top{display:flex; justify-content:space-between; align-items:baseline; font-size:13px; color:var(--muted);}
   .be-top b{color:var(--ink); font-weight:600; margin-left:3px;}
@@ -2591,14 +2609,14 @@ function dayHeroHTML(data, t){
         rate !== null ? ` <span style="color:${rate<=0?'var(--sage)':'var(--rust)'}">${signed(rate,1)}/v</span>`
         : delta !== null ? ` <span style="color:${delta<=0?'var(--sage)':'var(--rust)'}">${signed(delta,1)}</span>` : ''}</label>
     </div>
-    <div class="dh-plate">${plate.svg}
+    ${dayViewMode() === 'tallrik' ? `<div class="dh-plate">${plate.svg}
       <div class="dh-center">
         <b style="${remaining < 0 ? `color:${zone==='gold'?'#B8862A':'#C2502E'}` : ''}">${Math.abs(remaining)}</b>
         <span>kcal ${remaining >= 0 ? 'kvar' : 'över'}</span>
       </div>
     </div>
     <div class="dh-legend">${leg.map(([k,l]) => `<span><i style="background:${ZONE_COL[k]};${k==='goal'?' box-shadow:0 0 0 1px #8FC7BD;':''}"></i>${l}</span>`).join('')}</div>
-    <div class="dh-note">${note}</div>
+    <div class="dh-note">${note}</div>` : budgetBarHTML(data, t, goal)}
     <div class="dh-row">
       ${mt ? `<div class="dh-prot" title="${Math.round(t.protein)} av ${mt.protein} g protein">
         <small>Protein</small>
@@ -2609,7 +2627,76 @@ function dayHeroHTML(data, t){
         <span class="val"><input type="text" inputmode="numeric" id="activeInput" value="${activeVal}" placeholder="0" aria-label="Aktiva kalorier" style="width:${Math.max(1,String(activeVal).length)+0.1}ch"><span>kcal</span></span>
       </label>` : ''}
     </div>
-    ${breakevenHTML(t, goal)}`;
+    ${dayViewMode() === 'tallrik' ? breakevenHTML(t, goal) : weekBalanceHTML(state.currentDate)}`;
+}
+
+/* Dagvy: 'stapel' (budgetstapel + veckan, från v40) eller 'tallrik' (den tidigare
+   tallriken + jämviktskortet, som i v39 — sparad på grenen tallrik-v39).
+   Väljs under Inställningar. */
+function dayViewMode(){ return state.settings.dayView === 'tallrik' ? 'tallrik' : 'stapel'; }
+
+const BUDGET_MEALS = [
+  ['frukost','Frukost','#EADFC8'], ['lunch','Lunch','#DCC8A4'], ['mellanmal','Mellanmål','#C9B18B'],
+  ['middag','Middag','#B49773'], ['snack','Kvällsmål','#9D805F'], ['alkohol','Alkohol','#9A7FD6'], ['ovrigt','Övrigt','#C3B9A6']
+];
+/* Svaret i klartext + en stapel med dagens måltider mot Plan och Jämvikt. */
+function budgetBarHTML(data, t, goal){
+  const plan = goal + t.burned, jam = maintenanceFor(goal) + t.burned, I = t.intake;
+  let num, lab, col, sub;
+  if(I <= plan){ num = plan - I; lab = 'kcal kvar'; col = 'var(--ink)'; sub = `till planen · ${nf(jam - I)} till jämvikt`; }
+  else if(I <= jam){ num = I - plan; lab = 'över planen'; col = 'var(--gold-ink)'; sub = `men ${nf(jam - I)} under jämvikt — du går ändå ner`; }
+  else { num = I - jam; lab = 'över jämvikt'; col = 'var(--rust)'; sub = 'du har ätit mer än du gjort av med'; }
+  const meals = {};
+  (data.food || []).forEach(f => { const k = statKind(f) || 'ovrigt'; meals[k] = (meals[k] || 0) + (Number(f.kcal) || 0); });
+  const used = BUDGET_MEALS.filter(([k]) => meals[k] > 0);
+  const max = Math.max(I, jam) * 1.06 || 1, x = v => Math.min(100, v / max * 100);
+  const pos = v => { const p = x(v); return p > 82 ? 'right' : p < 16 ? 'left' : 'mid'; };
+  const segs = used.map(([k,, c]) => `<i style="width:${(meals[k] / I * 100).toFixed(2)}%;background:${c}" title="${nf(meals[k])} kcal"></i>`).join('');
+  return `<div class="bb">
+    <div class="bb-big" style="color:${col}">${nf(num)}<small>${lab}</small></div>
+    <div class="bb-sub">${I > 0 ? sub : `Plan idag ${nf(plan)} kcal${t.burned ? ` (${nf(goal)} + ${nf(t.burned)} aktiva)` : ''}`}</div>
+    <div class="bb-bar">
+      <div class="bb-z" style="left:0;width:${x(plan)}%;background:rgba(27,77,72,.6);border-radius:9px 0 0 9px"></div>
+      <div class="bb-z" style="left:${x(plan)}%;width:${x(jam) - x(plan)}%;background:rgba(207,164,62,.30)"></div>
+      <div class="bb-z" style="left:${x(jam)}%;right:0;background:rgba(229,132,98,.28);border-radius:0 9px 9px 0"></div>
+      ${I > 0 ? `<div class="bb-fill" style="width:${x(I)}%">${segs}</div>` : ''}
+      <div class="bb-mk" style="left:${x(plan)}%"><span class="t ${pos(plan)}">Plan ${nf(plan)}</span></div>
+      <div class="bb-mk" style="left:${x(jam)}%"><span class="b ${pos(jam)}">Jämvikt ${nf(jam)}</span></div>
+    </div>
+    ${used.length ? `<div class="bb-leg">${used.map(([k, l, c]) => `<span><b style="background:${c}"></b>${l} ${nf(meals[k])}</span>`).join('')}</div>` : ''}
+  </div>`;
+}
+
+/* Veckan mot jämvikt, dag för dag. Samma räkning som "underskott" i rubriken. */
+function weekBalanceHTML(d){
+  const goal = state.settings.dailyGoal, trend = weightTrendSeries(), today = todayYmd(), sel = ymd(d);
+  const names = ['mån','tis','ons','tor','fre','lör','sön'];
+  const days = weekDays(d).map((x, i) => {
+    const k = ymd(x), t = dayTotals(state.cache[k] || { food:[], exercise:[] });
+    const has = t.intake > 0 && k <= today;
+    return { k, i, has, diff: has ? t.net - maintenanceAt(k, goal, trend) : 0 };
+  });
+  const logged = days.filter(x => x.has);
+  if(!logged.length) return '';
+  const sum = logged.reduce((a, x) => a + x.diff, 0);
+  const W = 330, H = 130, mid = H / 2, bw = 30, gap = (W - 20 - 7 * bw) / 6;
+  const top = Math.max(400, ...logged.map(x => Math.abs(x.diff)));
+  const bars = days.map(x => {
+    const cx = 10 + x.i * (bw + gap);
+    const lab = `<text x="${cx + bw/2}" y="${H + 12}" font-size="10" fill="#CDE8E2" text-anchor="middle" font-weight="${x.k === sel ? 800 : 500}">${names[x.i]}</text>`;
+    if(!x.has) return lab;
+    const h = Math.max(2, Math.abs(x.diff) / top * (H / 2 - 14)), over = x.diff > 0;
+    const y = over ? mid - h : mid;
+    return `<rect x="${cx}" y="${y.toFixed(1)}" width="${bw}" height="${h.toFixed(1)}" rx="4" fill="${over ? '#E58462' : '#9AD3C8'}" ${x.k === sel ? 'stroke="#F3EBDD" stroke-width="2"' : ''}/>
+      <text x="${cx + bw/2}" y="${(over ? y - 4 : y + h + 11).toFixed(1)}" font-size="9.5" fill="#F3EBDD" text-anchor="middle">${over ? '+' : '−'}${nf(Math.abs(x.diff))}</text>${lab}`;
+  }).join('');
+  const kg = Math.abs(sum) / 7700;
+  return `<div class="wkb">
+    <div class="wkb-top"><span>Veckan mot jämvikt</span><b style="color:${sum > 0 ? 'var(--rust)' : 'var(--sage)'}">${sum > 0 ? '+' : '−'}${nf(Math.abs(sum))} kcal ≈ ${sum > 0 ? '+' : '−'}${kg < 0.05 ? '0' : kg.toFixed(1).replace('.', ',')} kg</b></div>
+    <svg width="100%" viewBox="0 0 ${W} ${H + 16}" role="img" aria-label="Över eller under jämvikt per dag denna vecka">
+      <line x1="4" x2="${W - 4}" y1="${mid}" y2="${mid}" stroke="#F3EBDD" stroke-width="1.5"/>${bars}</svg>
+    <div class="wkb-sub">Turkos = under jämvikt (du går ner) · rött = över. Vald dag har ram.</div>
+  </div>`;
 }
 
 /* Breakeven = det du kan äta idag utan att gå upp: förbrukningen + det du förbränt. */
@@ -6496,6 +6583,13 @@ function renderSettings(content){
         <label>Målvikt (kg)</label>
         <input id="sTarget" type="number" step="0.1" value="${state.settings.targetWeight}">
       </div>
+      <div class="settingsrow">
+        <label>Dagvy</label>
+        <select id="sDayView">
+          <option value="stapel" ${dayViewMode()==='stapel'?'selected':''}>Stapel och veckan (ny)</option>
+          <option value="tallrik" ${dayViewMode()==='tallrik'?'selected':''}>Tallrik (tidigare)</option>
+        </select>
+      </div>
       <button class="addbtn" id="sSave" style="border-style:solid; color:var(--on-accent); background:var(--ink); border-color:var(--ink);">Spara inställningar</button>
     </div>
 
@@ -6621,6 +6715,7 @@ function renderSettings(content){
     state.settings.targetWeight = Number(document.getElementById('sTarget').value) || state.settings.targetWeight;
     const hv = document.getElementById('cHeight'); if(hv) state.settings.height = Number(hv.value)||null;
     const av = document.getElementById('cAge'); if(av) state.settings.age = Number(av.value)||null;
+    const dv = document.getElementById('sDayView'); if(dv) state.settings.dayView = dv.value;
     await ghSaveBundle();
     renderContent();
   };
