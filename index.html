@@ -818,6 +818,7 @@
   .bb-big{font-family:'Fraunces',Georgia,serif; font-size:40px; line-height:1.02; font-weight:600;}
   .bb-big small{font-family:'Manrope',system-ui,sans-serif; font-size:15px; font-weight:600; color:var(--muted); margin-left:7px;}
   .bb-sub{font-size:13px; color:var(--muted); margin-top:3px;}
+  .bb-sub em{font-style:normal; font-weight:700;} .bb-sub em.pl{color:var(--gold-ink);} .bb-sub em.jm{color:#F2A08A;}
   .bb-bar{position:relative; height:30px; margin:30px 0 30px; border-radius:9px; background:rgba(0,0,0,.18);}
   .bb-z{position:absolute; top:0; bottom:0;}
   .bb-fill{position:absolute; top:5px; bottom:5px; left:0; display:flex; gap:2px; border-radius:6px; overflow:hidden;}
@@ -826,6 +827,8 @@
   .bb-mk span{position:absolute; white-space:nowrap; font-size:11.5px; font-weight:700; color:var(--ink); transform:translateX(-50%);}
   .bb-mk span.right{transform:translateX(calc(-100% + 2px));} .bb-mk span.left{transform:translateX(-2px);}
   .bb-mk .t{bottom:calc(100% + 3px);} .bb-mk .b{top:calc(100% + 3px);}
+  .bb-mk.plan{border-color:var(--gold-ink);} .bb-mk.plan span{color:var(--gold-ink);}
+  .bb-mk.jam{border-color:#F2A08A;} .bb-mk.jam span{color:#F2A08A;}
   .bb-leg{display:flex; flex-wrap:wrap; gap:4px 12px; font-size:12px; color:var(--muted);}
   .bb-leg b{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; vertical-align:-1px;}
   .wkb{background:var(--card); border-radius:16px; padding:11px 14px 10px; margin:2px 0 4px;}
@@ -2643,8 +2646,8 @@ const BUDGET_MEALS = [
 function budgetBarHTML(data, t, goal){
   const plan = goal + t.burned, jam = maintenanceFor(goal) + t.burned, I = t.intake;
   let num, lab, col, sub;
-  if(I <= plan){ num = plan - I; lab = 'kcal kvar'; col = 'var(--ink)'; sub = `till planen · ${nf(jam - I)} till jämvikt`; }
-  else if(I <= jam){ num = I - plan; lab = 'över planen'; col = 'var(--gold-ink)'; sub = `men ${nf(jam - I)} under jämvikt — du går ändå ner`; }
+  if(I <= plan){ num = plan - I; lab = 'kcal kvar'; col = 'var(--ink)'; sub = `till <em class="pl">planen</em> · ${nf(jam - I)} till <em class="jm">jämvikt</em>`; }
+  else if(I <= jam){ num = I - plan; lab = 'över planen'; col = 'var(--gold-ink)'; sub = `men ${nf(jam - I)} under <em class="jm">jämvikt</em> — du går ändå ner`; }
   else { num = I - jam; lab = 'över jämvikt'; col = 'var(--rust)'; sub = 'du har ätit mer än du gjort av med'; }
   const meals = {};
   (data.food || []).forEach(f => { const k = statKind(f) || 'ovrigt'; meals[k] = (meals[k] || 0) + (Number(f.kcal) || 0); });
@@ -2660,8 +2663,8 @@ function budgetBarHTML(data, t, goal){
       <div class="bb-z" style="left:${x(plan)}%;width:${x(jam) - x(plan)}%;background:rgba(207,164,62,.30)"></div>
       <div class="bb-z" style="left:${x(jam)}%;right:0;background:rgba(229,132,98,.28);border-radius:0 9px 9px 0"></div>
       ${I > 0 ? `<div class="bb-fill" style="width:${x(I)}%">${segs}</div>` : ''}
-      <div class="bb-mk" style="left:${x(plan)}%"><span class="t ${pos(plan)}">Plan ${nf(plan)}</span></div>
-      <div class="bb-mk" style="left:${x(jam)}%"><span class="b ${pos(jam)}">Jämvikt ${nf(jam)}</span></div>
+      <div class="bb-mk plan" style="left:${x(plan)}%"><span class="t ${pos(plan)}">Plan ${nf(plan)}</span></div>
+      <div class="bb-mk jam" style="left:${x(jam)}%"><span class="b ${pos(jam)}">Jämvikt ${nf(jam)}</span></div>
     </div>
     ${used.length ? `<div class="bb-leg">${used.map(([k, l, c]) => `<span><b style="background:${c}"></b>${l} ${nf(meals[k])}</span>`).join('')}</div>` : ''}
   </div>`;
