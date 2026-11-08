@@ -991,10 +991,15 @@ window.onerror = function(msg, src, line, col, err){
 
 /* Versionsnummer — ökas med 1 vid varje publicering (och en rad läggs i CHANGELOG).
    Syns i sidhuvudet så att man ser om sidan är cachad. */
-const APP_VERSION = 39;
+const APP_VERSION = 40;
 function versionLabel(){ return `v${APP_VERSION}`; }
 /* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
 const CHANGELOG = [
+  ['2026-11-08', [
+    'Ny dagvy: svaret i klartext och en stapel med dagens måltider mot Plan (guld) och Jämvikt (rött)',
+    'Veckan mot jämvikt, dag för dag, ersätter jämviktskortet',
+    'Tallriken finns kvar — välj Dagvy under Inställningar'
+  ]],
   ['2026-11-08', [
     '"Över målet" heter nu "Över jämvikt" — samma ord i status, förklaring och text'
   ]],
