@@ -835,6 +835,13 @@
   .wkb-top{display:flex; justify-content:space-between; align-items:baseline; font-size:13px; color:var(--muted); margin-bottom:4px;}
   .wkb-top b{font-size:14px;}
   .wkb-sub{font-size:11px; color:var(--muted); margin-top:2px;}
+  .wks{background:var(--card); border-radius:16px; padding:11px 14px 10px; margin:2px 0 4px; font-size:13.5px;}
+  .wks-row{display:flex; justify-content:space-between; align-items:baseline; padding:2px 0; color:var(--muted);}
+  .wks-row b{font-size:14.5px;} .wks em{font-style:normal; font-weight:700;} .wks em.pl{color:var(--gold-ink);} .wks em.jm{color:#F2A08A;}
+  .wks-need{margin-top:6px; padding-top:7px; border-top:1px solid rgba(255,255,255,.1); color:var(--ink); line-height:1.35;}
+  .wks-note{font-size:11px; color:var(--muted); margin-top:4px;}
+  .wkb-in{margin:6px 0 4px;} .wkb-in .wkb-sub{font-size:12px;}
+  .wkb-dot{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; vertical-align:-1px;}
   .dh-be{background:var(--card); border-radius:16px; padding:10px 14px 9px; margin:2px 0 4px;}
   .be-top{display:flex; justify-content:space-between; align-items:baseline; font-size:13px; color:var(--muted);}
   .be-top b{color:var(--ink); font-weight:600; margin-left:3px;}
@@ -2635,7 +2642,7 @@ function dayHeroHTML(data, t){
         <span class="val"><input type="text" inputmode="numeric" id="activeInput" value="${activeVal}" placeholder="0" aria-label="Aktiva kalorier" style="width:${Math.max(1,String(activeVal).length)+0.1}ch"><span>kcal</span></span>
       </label>` : ''}
     </div>
-    ${dayViewMode() === 'tallrik' ? breakevenHTML(t, goal) : weekBalanceHTML(state.currentDate)}`;
+    ${dayViewMode() === 'tallrik' ? breakevenHTML(t, goal) : weekSummaryHTML(state.currentDate)}`;
 }
 
 /* Dagvy: 'stapel' (budgetstapel + veckan, från v40) eller 'tallrik' (den tidigare
@@ -2675,8 +2682,44 @@ function budgetBarHTML(data, t, goal){
   </div>`;
 }
 
+/* Dagvyn: veckan i två rader — hur mycket före/efter planen hittills (avslutade dagar)
+   och vad som krävs per kvarvarande dag för att vara i fas på söndag. */
+function weekSummaryHTML(d){
+  const goal = state.settings.dailyGoal, trend = weightTrendSeries(), today = todayYmd();
+  const ks = weekDays(d).map(ymd);
+  let plan = 0, jam = 0, done = 0;
+  ks.forEach(k => {
+    if(k >= today) return;                       // bara avslutade dagar
+    const t = dayTotals(state.cache[k] || { food:[], exercise:[] });
+    if(t.intake <= 0) return;
+    done++; plan += t.net - goalAt(k); jam += t.net - maintenanceAt(k, goal, trend);
+  });
+  const left = ks.filter(k => k >= today).length;  // idag och resten av veckan
+  if(!done) return '';
+  const behind = Math.round(plan), perDay = left ? Math.round(behind / left) : 0;
+  const ahead = behind <= 0;
+  const kg = Math.abs(jam) / 7700, kgTxt = kg < 0.05 ? '0' : kg.toFixed(1).replace('.', ',');
+  const days = left === 1 ? 'idag' : `de ${left} dagar som är kvar`;
+  const lines = [];
+  if(left){
+    if(ahead) lines.push(`Du har <b>${nf(-perDay)} kcal/dag</b> att ta av ${days} och håller ändå <em class="pl">planen</em>.`);
+    else if(perDay > goal * 0.6) lines.push(`Att hinna ikapp <em class="pl">planen</em> skulle kräva ${nf(perDay)} kcal/dag under planen ${days} — inte rimligt. Håll planen så stannar veckan på +${nf(behind)}.`);
+    else lines.push(`Ikapp <em class="pl">planen</em> till söndag: <b>${nf(perDay)} kcal/dag under planen</b> ${days}.`);
+    const pj = Math.round(-jam / left);
+    if(pj >= 0) lines.push(`Mot <em class="jm">jämvikt</em> har du marginal: veckan går jämnt ut även med <b>${nf(pj)} kcal/dag över jämvikt</b> ${days}.`);
+    else lines.push(`För att veckan ska gå jämnt ut mot <em class="jm">jämvikt</em>: <b>${nf(-pj)} kcal/dag under jämvikt</b> ${days}.`);
+  }
+  const need = lines.join('<br>');
+  return `<div class="wks">
+    <div class="wks-row"><span>Veckan mot <em class="pl">planen</em></span><b style="color:${ahead ? 'var(--sage)' : 'var(--gold-ink)'}">${ahead ? nf(-behind) + ' kcal före' : nf(behind) + ' kcal efter'}</b></div>
+    <div class="wks-row"><span>Veckan mot <em class="jm">jämvikt</em></span><b style="color:${jam <= 0 ? 'var(--sage)' : 'var(--rust)'}">${jam <= 0 ? '−' : '+'}${nf(Math.abs(jam))} kcal ≈ ${kgTxt === '0' ? '' : (jam <= 0 ? '−' : '+')}${kgTxt} kg</b></div>
+    ${need ? `<div class="wks-need">${need}</div>` : ''}
+    <div class="wks-note">${left ? `Räknat på ${done} avslutade dagar, idag ingår inte.` : `Hela veckan, ${done} loggade dagar.`}</div>
+  </div>`;
+}
+
 /* Veckan mot jämvikt, dag för dag. Samma räkning som "underskott" i rubriken. */
-function weekBalanceHTML(d){
+function weekBalanceHTML(d, opts = {}){
   const goal = state.settings.dailyGoal, trend = weightTrendSeries(), today = todayYmd(), sel = ymd(d);
   const names = ['mån','tis','ons','tor','fre','lör','sön'];
   const days = weekDays(d).map((x, i) => {
@@ -2685,20 +2728,27 @@ function weekBalanceHTML(d){
     return { k, i, has, diff: has ? t.net - maintenanceAt(k, goal, trend) : 0 };
   });
   const logged = days.filter(x => x.has);
-  if(!logged.length) return '';
+  if(!logged.length) return opts.inWeek ? `<div class="cmp-note" style="margin:10px 0;">Logga en dag för att se veckan mot jämvikt.</div>` : '';
   const sum = logged.reduce((a, x) => a + x.diff, 0);
   const W = 330, H = 130, mid = H / 2, bw = 30, gap = (W - 20 - 7 * bw) / 6;
   const top = Math.max(400, ...logged.map(x => Math.abs(x.diff)));
   const bars = days.map(x => {
     const cx = 10 + x.i * (bw + gap);
-    const lab = `<text x="${cx + bw/2}" y="${H + 12}" font-size="10" fill="#CDE8E2" text-anchor="middle" font-weight="${x.k === sel ? 800 : 500}">${names[x.i]}</text>`;
+    const lab = `<text x="${cx + bw/2}" y="${H + 12}" font-size="10" fill="#CDE8E2" text-anchor="middle" font-weight="${x.k === sel ? 800 : 500}">${x.k === today ? 'idag' : names[x.i]}</text>`;
     if(!x.has) return lab;
     const h = Math.max(2, Math.abs(x.diff) / top * (H / 2 - 14)), over = x.diff > 0;
     const y = over ? mid - h : mid;
-    return `<rect x="${cx}" y="${y.toFixed(1)}" width="${bw}" height="${h.toFixed(1)}" rx="4" fill="${over ? '#E58462' : '#9AD3C8'}" ${x.k === sel ? 'stroke="#F3EBDD" stroke-width="2"' : ''}/>
+    const live = x.k === today;   // dagen pågår — siffran är bara hittills
+    return `<rect x="${cx}" y="${y.toFixed(1)}" width="${bw}" height="${h.toFixed(1)}" rx="4" fill="${over ? '#E58462' : '#9AD3C8'}" ${live ? 'fill-opacity=".4" stroke-dasharray="3 2"' : ''} ${x.k === sel || live ? `stroke="#F3EBDD" stroke-width="${x.k === sel ? 2 : 1}"` : ''}><title>${live ? 'Idag, hittills' : ''}</title></rect>
       <text x="${cx + bw/2}" y="${(over ? y - 4 : y + h + 11).toFixed(1)}" font-size="9.5" fill="#F3EBDD" text-anchor="middle">${over ? '+' : '−'}${nf(Math.abs(x.diff))}</text>${lab}`;
   }).join('');
   const kg = Math.abs(sum) / 7700;
+  if(opts.inWeek) return `<div class="wkb-in">
+    <svg width="100%" viewBox="0 0 ${W} ${H + 16}" role="img" aria-label="Över eller under jämvikt per dag denna vecka">
+      <text x="${W - 4}" y="${mid - 5}" font-size="9.5" fill="#CDE8E2" text-anchor="end">jämvikt</text>
+      <line x1="4" x2="${W - 4}" y1="${mid}" y2="${mid}" stroke="#F3EBDD" stroke-width="1.5"/>${bars}</svg>
+    <div class="wkb-sub" style="display:flex; gap:12px; flex-wrap:wrap;"><span><i class="wkb-dot" style="background:#9AD3C8"></i>under jämvikt — du går ner</span><span><i class="wkb-dot" style="background:#E58462"></i>över jämvikt</span>${days.some(x => x.has && x.k === today) ? '<span>blek = idag, hittills</span>' : ''}</div>
+  </div>`;
   return `<div class="wkb">
     <div class="wkb-top"><span>Veckan mot jämvikt</span><b style="color:${sum > 0 ? 'var(--rust)' : 'var(--sage)'}">${sum > 0 ? '+' : '−'}${nf(Math.abs(sum))} kcal ≈ ${sum > 0 ? '+' : '−'}${kg < 0.05 ? '0' : kg.toFixed(1).replace('.', ',')} kg</b></div>
     <svg width="100%" viewBox="0 0 ${W} ${H + 16}" role="img" aria-label="Över eller under jämvikt per dag denna vecka">
@@ -5702,7 +5752,7 @@ async function renderWeek(content){
         <div class="label">Vecka ${weekNumber(days[0])}<small>${fmtRange(days[0], days[6])}</small></div>
         <button id="nextWeek">›</button>
       </div>
-      ${netBarChart(results, goal, 'week')}
+      ${weekBalanceHTML(state.currentDate, { inWeek: true })}
       <div class="summaryrow">
         <div class="stat"><div class="k">Snitt netto/dag</div><div class="v" style="color:${avgNetColor(st.avgNet, goal)}">${st.avgNet}</div></div>
         <div class="stat"><div class="k">Mål/dag</div><div class="v">${goal}</div></div>
