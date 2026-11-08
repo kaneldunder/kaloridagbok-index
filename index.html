@@ -1000,10 +1000,14 @@ window.onerror = function(msg, src, line, col, err){
 
 /* Versionsnummer — ökas med 1 vid varje publicering (och en rad läggs i CHANGELOG).
    Syns i sidhuvudet så att man ser om sidan är cachad. */
-const APP_VERSION = 40;
+const APP_VERSION = 41;
 function versionLabel(){ return `v${APP_VERSION}`; }
 /* "Nytt" i Inställningar. Nyaste först; lägg till en rad vid varje publicering. */
 const CHANGELOG = [
+  ['2026-11-08', [
+    'Veckovyn: staplar per dag mot jämvikt (dagens är blek tills dagen är slut)',
+    'Dagvyn: veckan mot planen och jämvikt — tryck för att se vad som krävs resten av veckan'
+  ]],
   ['2026-11-08', [
     'Ny dagvy: svaret i klartext och en stapel med dagens måltider mot Plan (guld) och Jämvikt (rött)',
     'Veckan mot jämvikt, dag för dag, ersätter jämviktskortet',
