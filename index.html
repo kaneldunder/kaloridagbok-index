@@ -2565,13 +2565,13 @@ function dayHeroHTML(data, t){
     else note = `${remaining} kvar av målet ${goal}.`;
   } else note = zone === 'gold'
     ? `${-remaining} över planen, men fortfarande under din förbrukning.`
-    : `Över din förbrukning idag.`;
+    : `Över jämvikt idag – du har ätit mer än du gjort av med.`;
 
   // Teckenförklaring: bara det som är relevant
   const leg = [['goal','Inom målet']];
   if(t.burned > 0) leg.push(['train','Träningskalorier']);
   if(plate.I > goal + t.burned) leg.push(['gold','Över planen']);
-  if(plate.I > maintenanceFor(goal) + t.burned) leg.push(['rust','Över förbrukningen']);
+  if(plate.I > maintenanceFor(goal) + t.burned) leg.push(['rust','Över jämvikt']);
 
   // Aktiva kalorier + protein
   const baseline = inBaselineMode();
@@ -4122,7 +4122,7 @@ function dayStatus(t, goal, remaining){
   if(!logged) return { label:'Ingen mat loggad', line:'Lägg till dagens första måltid.' };
   const pct = goal ? t.net / goal : 0;
   if(remaining < 0)
-    return { label:'Över målet', line:`${Math.abs(remaining)} kcal över planen.` };
+    return { label:'Över jämvikt', line:`${Math.abs(remaining)} kcal över planen.` };
   if(mt && t.protein >= mt.protein && pct <= 1)
     return { label:'Målen nådda', line:'Både kalorier och protein ligger rätt.' };
   if(pct > 0.9)
