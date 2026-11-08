@@ -835,7 +835,9 @@
   .wkb-top{display:flex; justify-content:space-between; align-items:baseline; font-size:13px; color:var(--muted); margin-bottom:4px;}
   .wkb-top b{font-size:14px;}
   .wkb-sub{font-size:11px; color:var(--muted); margin-top:2px;}
-  .wks{background:var(--card); border-radius:16px; padding:11px 14px 10px; margin:2px 0 4px; font-size:13.5px;}
+  .wks{position:relative; background:var(--card); border-radius:16px; padding:11px 34px 10px 14px; margin:2px 0 4px; font-size:13.5px; cursor:pointer; -webkit-tap-highlight-color:transparent;}
+  .wks-chev{position:absolute; right:13px; top:50%; transform:translateY(-50%); font-style:normal; color:var(--muted); font-size:15px; line-height:1;}
+  .wks.open .wks-chev{top:16px; transform:none;}
   .wks-row{display:flex; justify-content:space-between; align-items:baseline; padding:2px 0; color:var(--muted);}
   .wks-row b{font-size:14.5px;} .wks em{font-style:normal; font-weight:700;} .wks em.pl{color:var(--gold-ink);} .wks em.jm{color:#F2A08A;}
   .wks-need{margin-top:6px; padding-top:7px; border-top:1px solid rgba(255,255,255,.1); color:var(--ink); line-height:1.35;}
@@ -2710,11 +2712,13 @@ function weekSummaryHTML(d){
     else lines.push(`För att veckan ska gå jämnt ut mot <em class="jm">jämvikt</em>: <b>${nf(-pj)} kcal/dag under jämvikt</b> ${days}.`);
   }
   const need = lines.join('<br>');
-  return `<div class="wks">
+  const open = !!state.wksOpen;
+  return `<div class="wks${open ? ' open' : ''}" id="wksCard" role="button" tabindex="0" aria-expanded="${open}" title="Tryck för att ${open ? 'fälla ihop' : 'se vad som krävs resten av veckan'}">
     <div class="wks-row"><span>Veckan mot <em class="pl">planen</em></span><b style="color:${ahead ? 'var(--sage)' : 'var(--gold-ink)'}">${ahead ? nf(-behind) + ' kcal före' : nf(behind) + ' kcal efter'}</b></div>
     <div class="wks-row"><span>Veckan mot <em class="jm">jämvikt</em></span><b style="color:${jam <= 0 ? 'var(--sage)' : 'var(--rust)'}">${jam <= 0 ? '−' : '+'}${nf(Math.abs(jam))} kcal ≈ ${kgTxt === '0' ? '' : (jam <= 0 ? '−' : '+')}${kgTxt} kg</b></div>
-    ${need ? `<div class="wks-need">${need}</div>` : ''}
-    <div class="wks-note">${left ? `Räknat på ${done} avslutade dagar, idag ingår inte.` : `Hela veckan, ${done} loggade dagar.`}</div>
+    ${open ? `${need ? `<div class="wks-need">${need}</div>` : ''}
+    <div class="wks-note">${left ? `Räknat på ${done} avslutade dagar, idag ingår inte.` : `Hela veckan, ${done} loggade dagar.`}</div>` : ''}
+    <i class="wks-chev">${open ? '⌃' : '⌄'}</i>
   </div>`;
 }
 
@@ -3181,11 +3185,18 @@ async function renderDay(content){
   };
 
 
+  const wksCard = document.getElementById('wksCard');
+  if(wksCard){
+    const toggle = () => { state.wksOpen = !state.wksOpen; renderContent(); };
+    wksCard.onclick = toggle;
+    wksCard.onkeydown = e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); toggle(); } };
+  }
   const activeInput = document.getElementById('activeInput');
   if(activeInput){
     // Markera hela siffran vid fokus så man kan skriva över direkt.
     // setTimeout krävs för att iOS Safari inte ska nollställa markeringen.
     activeInput.onfocus = () => setTimeout(() => activeInput.select(), 0);
+    activeInput.onclick = e => e.stopPropagation();
     activeInput.oninput = () => { activeInput.style.width = (Math.max(1, activeInput.value.length) + 0.1) + 'ch'; };
     activeInput.onchange = async () => {
       const v = Math.max(0, Math.round(Number(activeInput.value.replace(',','.')) || 0));
